@@ -1,0 +1,42 @@
+[
+  {
+    "name": "Menejer",
+    "login": "menejer",
+    "passwordHash": "pbkdf2_sha256$200000$6d5b3625e8b00f3efa28124cb4febbde$3a6316c92161b198cf6efd6179a7bad44c58fd226cfe63a454cd5c935f2a24f9",
+    "role": "super_admin",
+    "email": "menejer@sadaf.uz",
+    "phone": "+998 90 000 00 00",
+    "position": "Administrator",
+    "shift": "To'liq kun",
+    "status": "Ishlayapti",
+    "birthDate": "",
+    "hireDate": "04.10.2026",
+    "address": "",
+    "deals": 0,
+    "managerId": null,
+    "active": true,
+    "id": 2,
+    "createdAt": "2026-10-04T14:05:17+00:00",
+    "updatedAt": "2026-10-04T14:05:17+00:00"
+  },
+  {
+    "name": "Bosh Menejer",
+    "login": "admin",
+    "passwordHash": "pbkdf2_sha256$200000$3be1507bc7f0619f6305f4b841895626$e170b5ca321c03a43b50706f2e168906c874ce486b8eb54674c4fb0918a74e42",
+    "role": "super_admin",
+    "email": "admin@sadaf.uz",
+    "phone": "+998 90 000 00 00",
+    "position": "Administrator",
+    "shift": "To'liq kun",
+    "status": "Ishlayapti",
+    "birthDate": "",
+    "hireDate": "04.10.2026",
+    "address": "",
+    "deals": 0,
+    "managerId": null,
+    "active": true,
+    "id": 1,
+    "createdAt": "2026-10-04T14:05:17+00:00",
+    "updatedAt": "2026-10-04T14:05:17+00:00"
+  }
+]

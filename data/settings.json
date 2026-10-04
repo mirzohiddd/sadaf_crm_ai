@@ -1,0 +1,36 @@
+[
+  {
+    "userId": 2,
+    "appearance": {
+      "mode": "color",
+      "color": "#f4f7fb",
+      "image": "",
+      "imageSrcset": "",
+      "dim": 0,
+      "accent": "#f08a63",
+      "cardSolidity": 82
+    },
+    "sidebarCollapsed": false,
+    "language": "uz",
+    "id": 2,
+    "createdAt": "2026-10-04T14:05:17+00:00",
+    "updatedAt": "2026-10-04T14:05:17+00:00"
+  },
+  {
+    "userId": 1,
+    "appearance": {
+      "mode": "color",
+      "color": "#f4f7fb",
+      "image": "",
+      "imageSrcset": "",
+      "dim": 0,
+      "accent": "#f08a63",
+      "cardSolidity": 82
+    },
+    "sidebarCollapsed": false,
+    "language": "uz",
+    "id": 1,
+    "createdAt": "2026-10-04T14:05:17+00:00",
+    "updatedAt": "2026-10-04T14:05:17+00:00"
+  }
+]
