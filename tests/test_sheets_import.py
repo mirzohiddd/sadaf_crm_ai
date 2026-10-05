@@ -144,3 +144,94 @@ def test_imported_lead_without_manager_visible_to_boss(client, secret):
     ids = [l["id"] for l in client.get("/api/leads", headers=boss).json()]
     assert lead["id"] in ids
     assert config.SHEETS_WEBHOOK_SECRET  # mavjud sozlama o'zgarmagan
+
+
+# ——— Dublikat topilganda mavjud leadning BO'SH maydonlarini to'ldirish ———
+
+
+def _lead(lead_id):
+    return next(l for l in storage.read("leads") if int(l["id"]) == int(lead_id))
+
+
+def test_duplicate_by_phone_fills_empty_name_rustamjon(client, secret, monkeypatch):
+    """CRM: name="" phone="+998901687722"; Sheets: Rustamjon | 998901687722 → name yoziladi."""
+    old = _post(client, secret, phone="+998901687722")["lead"]
+    assert old["name"] == ""
+    count = len(storage.read("leads"))
+    monkeypatch.setattr("app.storage.now_iso", lambda: "2099-01-01T00:00:00+00:00")
+
+    resp = _post(client, secret, name="Rustamjon", phone="998901687722", platform="ig",
+                 comment="Sheets izohi", createdTime="2026-08-06T07:39:23-05:00")
+    lead = resp["lead"]
+    assert resp["duplicate"] is True                       # javob formati saqlangan
+    assert lead["id"] == old["id"]                         # yangi lead yaratilmadi, ID o'zgarmadi
+    assert len(storage.read("leads")) == count
+    assert lead["name"] == "Rustamjon"
+    assert lead["phone"] == "+998901687722"                # mavjud telefon almashtirilmadi
+    assert (lead["source"], lead["comment"]) == ("Instagram", "Sheets izohi")
+    assert (lead["date"], lead["time"]) == ("06.08.2026", "07:39")
+    assert lead["createdAt"] == old["createdAt"]           # createdAt o'zgarmaydi
+    assert lead["updatedAt"] == "2099-01-01T00:00:00+00:00"  # updatedAt yangilandi
+    assert set(resp["updated"]) >= {"name", "source", "comment", "date", "time"}
+    assert _lead(old["id"])["name"] == "Rustamjon"         # bazada ham saqlangan
+
+
+def test_duplicate_never_overwrites_existing_values(client, secret, monkeypatch):
+    """CRM'da ism "Rustamjon" bo'lsa, Sheets'dan boshqa ism kelsa ham o'zgarmaydi."""
+    old = _post(client, secret, name="Rustamjon", phone="+998901687733", tour="Dubay", comment="eski",
+                platform="Telegram", leadStatus="Bog'lanildi", createdTime="2026-08-01T10:00:00+05:00")["lead"]
+    monkeypatch.setattr("app.storage.now_iso", lambda: "2099-01-01T00:00:00+00:00")
+
+    resp = _post(client, secret, name="Boshqa Ism", phone="998901687733", tour="Turkiya", comment="yangi",
+                 platform="ig", leadStatus="Yangi", createdTime="2026-09-09T09:09:09+05:00",
+                 city="Samarqand", amount=1500, people=2)
+    lead = resp["lead"]
+    assert resp["duplicate"] is True and lead["id"] == old["id"]
+    # To'ldirilgan maydonlar o'zgarmadi
+    assert (lead["name"], lead["tour"], lead["comment"]) == ("Rustamjon", "Dubay", "eski")
+    assert (lead["source"], lead["stage"], lead["date"]) == ("Telegram", "Bog'lanildi", "01.08.2026")
+    # Faqat bo'sh maydonlar to'ldirildi
+    assert (lead["city"], lead["amount"], lead["people"]) == ("Samarqand", 1500.0, 2)
+    assert sorted(resp["updated"]) == ["amount", "city", "people"]
+
+
+def test_duplicate_with_nothing_new_changes_nothing(client, secret, monkeypatch):
+    old = _post(client, secret, name="Rustamjon", phone="+998901687744")["lead"]
+    monkeypatch.setattr("app.storage.now_iso", lambda: "2099-01-01T00:00:00+00:00")
+    resp = _post(client, secret, name="", phone="998901687744")  # bo'sh qiymatlar hech narsani o'chirmaydi
+    assert resp["duplicate"] is True and resp["updated"] == []
+    assert resp["lead"]["name"] == "Rustamjon"
+    assert _lead(old["id"])["updatedAt"] == old["updatedAt"]   # o'zgarish bo'lmasa updatedAt ham o'zgarmaydi
+
+
+def test_duplicate_by_id_fills_empty_phone(client, secret):
+    old = _post(client, secret, name="Telefonsiz", externalId="l:9020")["lead"]
+    assert old["phone"] == ""
+    resp = _post(client, secret, name="Telefonsiz", phone="+998901687755", externalId="l:9020")
+    assert resp["duplicate"] is True and resp["lead"]["id"] == old["id"]
+    assert resp["lead"]["phone"] == "+998901687755" and resp["updated"] == ["phone"]
+
+
+def test_duplicate_fills_crm_lead_with_zero_amount(client, secret):
+    """CRM formasi bo'sh summa/odam sonini 0 deb saqlaydi — Sheets qiymati bilan to'ldiriladi."""
+    boss = login(client, "boss", "boss12345")
+    crm = client.post("/api/leads", headers=boss, json={"name": "Qo'lda kiritilgan", "phone": "+998901687766",
+                                                        "amount": 0, "people": 0, "tour": "Misr"})
+    assert crm.status_code == 201, crm.text
+    resp = _post(client, secret, name="Boshqa", phone="998901687766", amount="900", people=3, tour="Turkiya")
+    lead = resp["lead"]
+    assert lead["id"] == crm.json()["id"]
+    assert (lead["name"], lead["tour"]) == ("Qo'lda kiritilgan", "Misr")
+    assert (lead["amount"], lead["people"]) == (900.0, 3)
+    # Odatiy CRM API ham yangilangan leadni ko'radi
+    got = client.get(f"/api/leads/{lead['id']}", headers=boss)
+    if got.status_code == 200:
+        assert got.json()["amount"] == 900.0
+
+
+def test_matched_by_phone_gets_external_id_for_future_imports(client, secret):
+    old = _post(client, secret, name="A", phone="+998901687777")["lead"]
+    _post(client, secret, phone="998901687777", externalId="l:9030")
+    assert _lead(old["id"])["externalId"] == "l:9030"
+    again = _post(client, secret, externalId="l:9030")       # endi id bo'yicha topiladi
+    assert again["duplicate"] is True and again["lead"]["id"] == old["id"]

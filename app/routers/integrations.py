@@ -128,6 +128,71 @@ def _sheet_source(platform: str, source: str) -> str:
     return source.strip()
 
 
+# Dublikat topilganda Sheets qiymati bilan to'ldiriladigan maydonlar (faqat CRM'da bo'sh bo'lsa).
+_SHEET_FILLABLE = (
+    "name", "phone", "tour", "people", "amount", "manager", "source",
+    "stage", "telegram", "city", "comment", "date", "time",
+)
+# CRM formasi bo'sh qoldirilgan odam soni/summani 0 deb saqlaydi — 0 ham "bo'sh" hisoblanadi.
+_ZERO_IS_BLANK = ("people", "amount")
+
+
+def _is_blank(field: str, value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+    if field in _ZERO_IS_BLANK and isinstance(value, (int, float)) and not isinstance(value, bool):
+        return value == 0
+    return False
+
+
+def _fill_empty_lead_fields(lead_id: int, incoming: dict[str, Any]) -> tuple[dict[str, Any] | None, list[str]]:
+    """Mavjud leadning FAQAT bo'sh maydonlarini Sheets qiymati bilan to'ldiradi.
+
+    - To'ldirilgan (bo'sh bo'lmagan) qiymat hech qachon ustidan yozilmaydi.
+    - Sheets'da bo'sh kelgan qiymat hech narsani o'zgartirmaydi.
+    - ``id`` va ``createdAt`` o'zgarmaydi; biror maydon to'ldirilsa ``updatedAt`` yangilanadi.
+
+    Tekshiruv va yozish bitta ``storage.mutate`` ichida — parallel so'rovlarda ham xavfsiz.
+    Qaytaradi: (lead, to'ldirilgan maydonlar ro'yxati).
+    """
+    filled: list[str] = []
+
+    def _needs_fill(row: dict[str, Any]) -> bool:
+        if incoming.get("externalId") and not str(row.get("externalId") or "").strip():
+            return True
+        return any(
+            not _is_blank(f, incoming.get(f)) and _is_blank(f, row.get(f)) for f in _SHEET_FILLABLE
+        )
+
+    current = next((r for r in storage.read("leads") if int(r.get("id", 0)) == int(lead_id)), None)
+    if current is None or not _needs_fill(current):
+        # To'ldiradigan narsa yo'q — fayl qayta yozilmaydi, updatedAt o'zgarmaydi.
+        return current, filled
+
+    def _do(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+        for row in rows:
+            if int(row.get("id", 0)) != int(lead_id):
+                continue
+            for field in _SHEET_FILLABLE:
+                value = incoming.get(field)
+                if not _is_blank(field, value) and _is_blank(field, row.get(field)):
+                    row[field] = value
+                    filled.append(field)
+            # Keyingi importlarda id bo'yicha topilishi uchun (texnik maydon, ekranda ko'rinmaydi).
+            if incoming.get("externalId") and not str(row.get("externalId") or "").strip():
+                row["externalId"] = incoming["externalId"]
+                filled.append("externalId")
+            if filled:
+                row["updatedAt"] = storage.now_iso()
+            return dict(row)
+        return None
+
+    lead = storage.mutate("leads", _do)
+    return lead, filled
+
+
 def _check_secret(x_sheets_secret: str | None) -> None:
     if not x_sheets_secret or x_sheets_secret != SHEETS_WEBHOOK_SECRET:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Noto'g'ri yoki yo'q maxfiy kalit.")
@@ -160,8 +225,10 @@ def create_lead_from_sheet(
     ===================  ==========================================
 
     - Duplikat: avval jadvaldagi ``id`` (``externalId``), keyin telefon
-      raqami bo'yicha — mos lead bo'lsa yangisi yaratilmaydi, mavjudi
-      qaytariladi (``duplicate: true``). Sheet1 va Sheet3 orasida ham.
+      raqami bo'yicha — mos lead bo'lsa yangisi yaratilmaydi (``duplicate: true``).
+      Sheet1 va Sheet3 orasida ham. Bunda mavjud leadning FAQAT BO'SH
+      maydonlari Sheets qiymati bilan to'ldiriladi (``updated`` — to'ldirilgan
+      maydonlar ro'yxati); to'ldirilgan qiymatlar hech qachon almashtirilmaydi.
     - Mas'ul menejer jadvalda bo'lmasa — lead biriktirilmagan holda qoladi
       (uni Super Admin ko'radi va CRM'dan biriktiradi).
     - Ism va telefon majburiy EMAS: bo'lmasa "" saqlanadi va lead baribir yaratiladi
@@ -177,10 +244,38 @@ def create_lead_from_sheet(
     # Telefon bo'sh bo'lsa telefon bo'yicha tekshirilmaydi (_find_lead_by_phone bo'sh raqamni o'tkazib yuboradi).
     external_id = body.externalId.strip()
     existing = _find_lead_by_external_id(external_id) or _find_lead_by_phone(phone)
-    if existing:
-        return {"ok": True, "duplicate": True, "lead": existing}
-
     date, time = _split_created_time(body.createdTime)
+
+    if existing:
+        # Yangi lead YARATILMAYDI — mavjud leadning faqat bo'sh maydonlari to'ldiriladi
+        # (masalan CRM'da ism bo'sh, Sheets'da "Rustamjon" bo'lsa — ism yoziladi;
+        # CRM'da ism allaqachon bor bo'lsa — o'zgarmaydi).
+        incoming = {
+            "name": name,
+            "phone": phone,
+            "tour": body.tour,
+            "people": body.people,
+            "amount": body.amount,
+            "manager": body.manager,
+            "source": _sheet_source(body.platform, body.source),
+            # lead_status bo'lmasa "Yangi" — faqat CRM'dagi bosqich bo'sh bo'lsa ishlatiladi.
+            "stage": _sheet_stage(body.leadStatus),
+            "telegram": body.telegram,
+            "city": body.city,
+            "comment": body.comment,
+            "date": date,
+            "time": time,
+            "externalId": external_id,
+        }
+        lead, filled = _fill_empty_lead_fields(int(existing["id"]), incoming)
+        lead = lead or existing
+        if filled:
+            # Bosqich/summa to'ldirilgan bo'lsa — savdo/mijoz sinxronizatsiyasi odatdagidek.
+            leads_router._sync_sale(lead)
+            leads_router._sync_client(lead)
+            notify.log("Google Sheets", "update", "lead", lead.get("name", ""),
+                       {"fields": filled}, actor_id=None)
+        return {"ok": True, "duplicate": True, "updated": filled, "lead": lead}
 
     data: dict[str, Any] = {
         "name": name,
