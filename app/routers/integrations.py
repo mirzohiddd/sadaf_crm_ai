@@ -164,14 +164,17 @@ def create_lead_from_sheet(
       qaytariladi (``duplicate: true``). Sheet1 va Sheet3 orasida ham.
     - Mas'ul menejer jadvalda bo'lmasa — lead biriktirilmagan holda qoladi
       (uni Super Admin ko'radi va CRM'dan biriktiradi).
+    - Ism va telefon majburiy EMAS: bo'lmasa "" saqlanadi va lead baribir yaratiladi
+      (bu qoida faqat shu endpoint uchun; sayt arizasida ism/telefon majburiyligicha qoladi).
     """
     _check_secret(x_sheets_secret)
 
+    # Ism va telefon majburiy emas — jadvalda bo'lmasa bo'sh qoladi, lead baribir yaratiladi.
     name = body.name.strip()
     phone = re.sub(r"^\s*p:", "", body.phone.strip(), flags=re.I).strip()
-    if not name or not phone:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Lead uchun ism va telefon shart.")
 
+    # Dublikat: avval jadvaldagi id, keyin (telefon bo'lsa) telefon bo'yicha.
+    # Telefon bo'sh bo'lsa telefon bo'yicha tekshirilmaydi (_find_lead_by_phone bo'sh raqamni o'tkazib yuboradi).
     external_id = body.externalId.strip()
     existing = _find_lead_by_external_id(external_id) or _find_lead_by_phone(phone)
     if existing:

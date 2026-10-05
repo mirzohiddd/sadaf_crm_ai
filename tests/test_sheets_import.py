@@ -95,9 +95,42 @@ def test_duplicates_by_id_and_phone_across_sheets(client, secret):
     assert sum(1 for l in storage.read("leads") if l.get("externalId") in ("l:9005", "x-9005")) == 1
 
 
-def test_missing_name_or_phone_rejected(client, secret):
-    assert client.post(URL, headers=secret, json={"name": "", "phone": "+998900000006"}).status_code == 400
-    assert client.post(URL, headers=secret, json={"name": "Ism", "phone": None}).status_code == 400
+def test_lead_created_without_name_and_phone(client, secret):
+    """Ism/telefon majburiy emas — bo'sh qoladi, lead baribir yaratiladi."""
+    no_name = _post(client, secret, phone="+998900000006", platform="ig", externalId="l:9006")
+    assert no_name["duplicate"] is False and no_name["lead"]["name"] == ""
+    assert no_name["lead"]["phone"] == "+998900000006"
+
+    no_phone = _post(client, secret, name="Ism", phone=None, comment="telefonsiz", externalId="l:9007")["lead"]
+    assert no_phone["phone"] == "" and no_phone["name"] == "Ism" and no_phone["comment"] == "telefonsiz"
+
+    nothing = _post(client, secret, createdTime="2026-08-06T07:39:23-05:00")["lead"]
+    assert (nothing["name"], nothing["phone"], nothing["source"], nothing["stage"]) == ("", "", "", "Yangi")
+    assert nothing["date"] == "06.08.2026"
+    assert nothing["people"] is None and nothing["amount"] is None and nothing["tour"] == ""
+    assert nothing["id"] in [l["id"] for l in storage.read("leads")]
+
+
+def test_leads_without_phone_are_not_duplicates_of_each_other(client, secret):
+    a = _post(client, secret, name="A", externalId="l:9008")
+    b = _post(client, secret, name="B", externalId="l:9009")
+    c = _post(client, secret, name="C")  # na id, na telefon
+    assert not a["duplicate"] and not b["duplicate"] and not c["duplicate"]
+    assert len({a["lead"]["id"], b["lead"]["id"], c["lead"]["id"]}) == 3
+
+
+def test_id_duplicate_still_detected_without_phone(client, secret):
+    first = _post(client, secret, name="Birinchi", externalId="l:9010")
+    again = _post(client, secret, name="", externalId="l:9010")
+    assert again["duplicate"] is True and again["lead"]["id"] == first["lead"]["id"]
+
+
+def test_website_endpoint_still_requires_name_and_phone(client, monkeypatch):
+    """Qoida faqat Google Sheets uchun — sayt arizasi o'zgarmagan."""
+    monkeypatch.setattr("app.routers.integrations.WEBSITE_WEBHOOK_SECRET", "web-test-secret")
+    resp = client.post("/api/integrations/website/lead", headers={"X-Website-Secret": "web-test-secret"},
+                       json={"name": "", "phone": "+998900000011"})
+    assert resp.status_code == 400
 
 
 def test_wrong_secret_rejected(client, secret):

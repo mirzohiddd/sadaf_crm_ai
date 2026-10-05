@@ -125,8 +125,9 @@ class SheetLeadIn(Loose):
     Ikkalasi ham bir vaqtda, ixtiyoriy tarzda ishlatilishi mumkin.
     """
 
-    name: str
-    phone: str
+    # Ism va telefon majburiy EMAS — jadvalda bo'lmasa bo'sh ("") saqlanadi.
+    name: str = ""
+    phone: str = ""
     # Jadvalda bo'lmagan maydonlar BO'SH qoladi — CRM hech narsani taxmin qilmaydi.
     tour: str = ""
     people: int | None = None   # "Nechta odam" — bo'sh bo'lsa None
@@ -162,7 +163,7 @@ class SheetLeadIn(Loose):
 
     @field_validator("name", "phone", mode="before")
     @classmethod
-    def _required_text(cls, v: Any) -> str:
+    def _name_phone_text(cls, v: Any) -> str:
         if isinstance(v, float) and v.is_integer():
             v = int(v)
         return "" if v is None else str(v).strip()
