@@ -2,13 +2,16 @@ from __future__ import annotations
 import asyncio
 import logging
 import contextlib
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from app import seed
+from app import seed, storage
 from app.config import (
     APP_DEBUG,
+    BASE_DIR,
+    DATA_DIR,
     CORS_ORIGINS,
     DEFAULT_JWT_SECRET,
     GROQ_FALLBACK_MODEL,
@@ -45,9 +48,33 @@ from app.services.realtime import manager as realtime_manager
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logging.getLogger("httpx").setLevel(logging.WARNING)  # har bir tashqi so'rovni log qilmasin
 logger = logging.getLogger("sadaf")
+
+
+def _report_storage() -> None:
+    """Ma'lumotlar qayerda saqlanayotgani va nechta lead borligini logga yozadi.
+
+    Render'da DATA_DIR loyiha papkasi ichida bo'lsa — u vaqtinchalik: har
+    deploy/qayta ishga tushishda tozalanadi (leads.json yana [] bo'ladi).
+    """
+    leads = len(storage.read("leads"))
+    print(f"[sadaf] Ma'lumotlar papkasi: {DATA_DIR} — leadlar: {leads}")
+    on_render = os.getenv("RENDER", "").lower() == "true"
+    try:
+        inside_app = DATA_DIR.resolve().is_relative_to(BASE_DIR.resolve())
+    except (OSError, ValueError):
+        inside_app = False
+    if on_render and inside_app:
+        print(
+            "[sadaf] OGOHLANTIRISH: Render'da DATA_DIR vaqtinchalik papkada. Har deploy yoki "
+            "qayta ishga tushishda leads.json va boshqa ma'lumotlar o'chadi! Persistent Disk "
+            "ulang (masalan /var/data) va DATA_DIR=/var/data qo'ying."
+        )
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     seed.run()
+    _report_storage()
     realtime_manager.bind_loop(asyncio.get_running_loop())
     # Lead eslatmalari uchun fon vazifasi: davriy ravishda vaqti kelgan
     # eslatmalarni topib, bildirishnoma yuboradi (pastda check_due()).

@@ -9,8 +9,10 @@ yozmaydi.
 """
 from __future__ import annotations
 import json
+import logging
 import os
 import threading
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -48,6 +50,13 @@ COLLECTIONS = (
     "call_analyses",
 )
 
+logger = logging.getLogger("sadaf.storage")
+
+
+class StorageCorruptError(RuntimeError):
+    """Kolleksiya fayli mavjud, lekin o'qib bo'lmaydi — ustidan yozish xavfli."""
+
+
 _locks: dict[str, threading.RLock] = {name: threading.RLock() for name in COLLECTIONS}
 _global_lock = threading.RLock()
 
@@ -83,18 +92,29 @@ def now_time() -> str:
     return now_tashkent().strftime("%H:%M")
 
 
-def read(name: str) -> list[dict[str, Any]]:
-    """Kolleksiyani o'qish. Fayl yo'q yoki buzuq bo'lsa — bo'sh ro'yxat."""
+def _read_strict(name: str) -> list[dict[str, Any]]:
+    """Fayl yo'q bo'lsa — []. Fayl bor, lekin buzuq bo'lsa — StorageCorruptError."""
     path = _path(name)
+    if not path.exists():
+        return []
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
+        raise StorageCorruptError(f"{path.name} o'qib bo'lmadi: {type(exc).__name__}") from exc
+    if not isinstance(data, list):
+        raise StorageCorruptError(f"{path.name} ro'yxat emas")
+    return data
+
+
+def read(name: str) -> list[dict[str, Any]]:
+    """Kolleksiyani o'qish. Fayl yo'q yoki buzuq bo'lsa — bo'sh ro'yxat (API yiqilmasin)."""
     with _lock(name):
-        if not path.exists():
-            return []
         try:
-            with path.open("r", encoding="utf-8") as fh:
-                data = json.load(fh)
-        except (json.JSONDecodeError, OSError):
+            return _read_strict(name)
+        except StorageCorruptError as exc:
+            logger.error("Ma'lumot fayli buzuq: %s", exc)
             return []
-    return data if isinstance(data, list) else []
 
 
 def write(name: str, rows: list[dict[str, Any]]) -> None:
@@ -118,7 +138,20 @@ def mutate(name: str, fn: Callable[[list[dict[str, Any]]], Any]) -> Any:
     fn ro'yxatni joyida o'zgartiradi va istalgan qiymat qaytaradi.
     """
     with _lock(name):
-        rows = read(name)
+        # Qat'iy o'qish: fayl buzuq bo'lsa [] deb qabul qilib, ustidan yozib
+        # yubormaymiz — aks holda bitta xato o'qish butun kolleksiyani
+        # (masalan leads.json) o'chirib yuborardi. Buzuq fayl nusxasi saqlanadi.
+        try:
+            rows = _read_strict(name)
+        except StorageCorruptError:
+            path = _path(name)
+            backup = path.with_name(f"{path.name}.corrupt-{datetime.now(timezone.utc):%Y%m%d%H%M%S}")
+            try:
+                backup.write_bytes(path.read_bytes())
+            except OSError:
+                pass
+            logger.error("%s buzuq — yozish to'xtatildi, nusxa: %s", path.name, backup.name)
+            raise
         result = fn(rows)
         write(name, rows)
         return result
@@ -176,6 +209,26 @@ def delete(name: str, item_id: int) -> dict[str, Any] | None:
         return None
 
     return mutate(name, _do)
+
+
+def storage_id() -> str:
+    """Ma'lumotlar papkasining doimiy identifikatori (DATA_DIR/.storage_id).
+
+    Papka yangidan yaratilsa (masalan Render diski tozalansa) — yangi ID
+    paydo bo'ladi. Google Sheets skripti shu orqali backend ma'lumotlari
+    yo'qolganini sezadi va leadlarni qayta yuboradi.
+    """
+    path = DATA_DIR / ".storage_id"
+    with _global_lock:
+        try:
+            value = path.read_text(encoding="utf-8").strip()
+            if value:
+                return value
+        except OSError:
+            pass
+        value = uuid.uuid4().hex
+        path.write_text(value, encoding="utf-8")
+        return value
 
 
 def ensure_files() -> None:

@@ -24,6 +24,7 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, status
+from fastapi.responses import JSONResponse
 
 from .. import storage
 from ..config import (
@@ -62,6 +63,59 @@ def _find_lead_by_phone(phone: Any) -> dict[str, Any] | None:
         if _digits(lead.get("phone")) == target:
             return lead
     return None
+
+
+_PHONE_RE = re.compile(r"^\+?\d{7,15}$")
+
+
+def _valid_phone(value: Any) -> str:
+    """Haqiqiy telefon raqami bo'lsa — uni ("p:" prefiksisiz) qaytaradi, aks holda "".
+
+    Raqam, bo'shliq, "-", ".", "(" ")" va boshidagi "+" dan boshqa belgi bo'lsa
+    (masalan "<test lead: dummy data for phone_number>", "bilmayman") yoki
+    raqamlar soni 7–15 oralig'ida bo'lmasa — telefon sifatida QABUL QILINMAYDI.
+    """
+    text = re.sub(r"^\s*p:", "", str(value or ""), flags=re.I).strip()
+    compact = re.sub(r"[\s\-.()]", "", text)
+    return text if _PHONE_RE.match(compact) else ""
+
+
+def _header_token(value: Any) -> str:
+    """ "ismingiz?" → "ismingiz", "Telefon raqamingiz?" → "telefon_raqamingiz"."""
+    return re.sub(r"[^a-z0-9]+", "_", str(value or "").lower().replace("'", "")).strip("_")
+
+
+# Jadval sarlavhalari — shu qiymatlar katakchada bo'lsa, bu qator lead emas, sarlavha.
+_HEADER_TOKENS = {
+    "name": {"ismingiz", "ism_familiya", "ism_familiyangiz", "ismingiz_familiyangiz", "full_name"},
+    "phone": {"phone_number", "telefon_raqamingiz", "telefon_raqam", "phone"},
+    "externalId": {"id", "lead_id"},
+    "platform": {"platform"},
+    "comment": {"comment", "kommentariya"},
+    "createdTime": {"created_time"},
+    "leadStatus": {"lead_status"},
+}
+# Meta "Test lead" vositasi va sinov yozuvlarining belgilari.
+_DUMMY_MARKERS = ("<test lead", "test lead:", "dummy data")
+_TEST_NAMES = {"test lead", "test", "testlead"}
+
+
+def _skip_reason(body: SheetLeadIn) -> str:
+    """Qator CRM'ga tushmasligi kerak bo'lsa — sababi, aks holda ""."""
+    values = {
+        "name": body.name, "phone": body.phone, "externalId": body.externalId, "platform": body.platform,
+        "comment": body.comment, "createdTime": body.createdTime, "leadStatus": body.leadStatus,
+    }
+    for field, tokens in _HEADER_TOKENS.items():
+        if values.get(field) and _header_token(values[field]) in tokens:
+            return "header"
+    texts = [body.name, body.phone, body.phoneAlt, body.comment, body.tour, body.city, body.telegram,
+             body.manager, body.externalId]
+    if any(marker in str(t).lower() for t in texts for marker in _DUMMY_MARKERS):
+        return "dummy"
+    if body.name.strip().lower() in _TEST_NAMES or body.platform.strip().lower() == "test":
+        return "dummy"
+    return ""
 
 
 def _find_lead_by_external_id(external_id: Any) -> dict[str, Any] | None:
@@ -236,9 +290,15 @@ def create_lead_from_sheet(
     """
     _check_secret(x_sheets_secret)
 
+    # Sarlavha qatori va Meta test/dummy qatorlari CRM'ga tushmaydi.
+    reason = _skip_reason(body)
+    if reason:
+        return JSONResponse({"ok": True, "skipped": True, "reason": reason})
+
     # Ism va telefon majburiy emas — jadvalda bo'lmasa bo'sh qoladi, lead baribir yaratiladi.
+    # Telefon: phone_number, yaroqsiz bo'lsa telefon_raqamingiz; ikkalasi ham yaroqsiz — "".
     name = body.name.strip()
-    phone = re.sub(r"^\s*p:", "", body.phone.strip(), flags=re.I).strip()
+    phone = _valid_phone(body.phone) or _valid_phone(body.phoneAlt)
 
     # Dublikat: avval jadvaldagi id, keyin (telefon bo'lsa) telefon bo'yicha.
     # Telefon bo'sh bo'lsa telefon bo'yicha tekshirilmaydi (_find_lead_by_phone bo'sh raqamni o'tkazib yuboradi).
@@ -276,6 +336,10 @@ def create_lead_from_sheet(
             notify.log("Google Sheets", "update", "lead", lead.get("name", ""),
                        {"fields": filled}, actor_id=None)
         return {"ok": True, "duplicate": True, "updated": filled, "lead": lead}
+
+    # Yangi lead uchun hech qanday mazmun bo'lmasa (bo'sh qator) — yaratilmaydi.
+    if not any((name, phone, body.comment, body.telegram, body.tour, body.city)):
+        return JSONResponse({"ok": True, "skipped": True, "reason": "empty"})
 
     data: dict[str, Any] = {
         "name": name,
@@ -319,6 +383,24 @@ def create_lead_from_sheet(
     )
 
     return {"ok": True, "duplicate": False, "lead": created}
+
+
+@router.get("/sheets/status")
+def sheets_status(x_sheets_secret: str | None = Header(default=None, alias="X-Sheets-Secret")) -> dict[str, Any]:
+    """Google Sheets skripti uchun holat (faqat X-Sheets-Secret bilan).
+
+    ``storageId`` — backend ma'lumotlar papkasining identifikatori. U o'zgarsa
+    (masalan Render'da disk tozalanib leads.json bo'sh qolsa) skript barcha
+    qatorlarni qayta yuboradi; dublikatlar baribir qayta qo'shilmaydi.
+    """
+    _check_secret(x_sheets_secret)
+    leads = storage.read("leads")
+    return {
+        "ok": True,
+        "storageId": storage.storage_id(),
+        "leads": len(leads),
+        "sheetsLeads": sum(1 for l in leads if l.get("sheetName") or l.get("externalId")),
+    }
 
 
 def _check_website_secret(x_website_secret: str | None) -> None:

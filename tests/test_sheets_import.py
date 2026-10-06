@@ -104,11 +104,9 @@ def test_lead_created_without_name_and_phone(client, secret):
     no_phone = _post(client, secret, name="Ism", phone=None, comment="telefonsiz", externalId="l:9007")["lead"]
     assert no_phone["phone"] == "" and no_phone["name"] == "Ism" and no_phone["comment"] == "telefonsiz"
 
-    nothing = _post(client, secret, createdTime="2026-08-06T07:39:23-05:00")["lead"]
-    assert (nothing["name"], nothing["phone"], nothing["source"], nothing["stage"]) == ("", "", "", "Yangi")
-    assert nothing["date"] == "06.08.2026"
-    assert nothing["people"] is None and nothing["amount"] is None and nothing["tour"] == ""
-    assert nothing["id"] in [l["id"] for l in storage.read("leads")]
+    only_comment = _post(client, secret, comment="faqat izoh", createdTime="2026-08-06T07:39:23-05:00")["lead"]
+    assert (only_comment["name"], only_comment["phone"], only_comment["stage"]) == ("", "", "Yangi")
+    assert only_comment["date"] == "06.08.2026" and only_comment["comment"] == "faqat izoh"
 
 
 def test_leads_without_phone_are_not_duplicates_of_each_other(client, secret):
@@ -235,3 +233,78 @@ def test_matched_by_phone_gets_external_id_for_future_imports(client, secret):
     assert _lead(old["id"])["externalId"] == "l:9030"
     again = _post(client, secret, externalId="l:9030")       # endi id bo'yicha topiladi
     assert again["duplicate"] is True and again["lead"]["id"] == old["id"]
+
+
+
+# ——— Sarlavha, test/dummy, bo'sh qatorlar va yaroqsiz telefon ———
+
+
+def _raw(client, secret, **row):
+    resp = client.post(URL, headers=secret, json=row)
+    assert resp.status_code in (200, 201), resp.text
+    return resp.json()
+
+
+@pytest.mark.parametrize("row", [
+    {"name": "ismingiz?", "phone": "phone_number", "platform": "platform", "comment": "Comment"},
+    {"name": "ismingiz?", "phone": "telefon_raqamingiz?"},
+    {"externalId": "id", "createdTime": "created_time", "name": "Ali"},
+])
+def test_header_row_is_skipped(client, secret, row):
+    before = len(storage.read("leads"))
+    data = _raw(client, secret, **row)
+    assert data == {"ok": True, "skipped": True, "reason": "header"}
+    assert len(storage.read("leads")) == before
+
+
+@pytest.mark.parametrize("row", [
+    {"name": "<test lead: dummy data for ismingiz?>", "phone": "<test lead: dummy data for phone_number>",
+     "externalId": "l:test1", "platform": "fb"},
+    {"name": "Test Lead", "phone": "+998900000000", "platform": "test"},
+    {"name": "Ali", "phone": "+998901112200", "comment": "dummy data for Comment"},
+])
+def test_dummy_rows_are_skipped(client, secret, row):
+    before = len(storage.read("leads"))
+    data = _raw(client, secret, **row)
+    assert data["skipped"] is True and data["reason"] == "dummy"
+    assert len(storage.read("leads")) == before
+
+
+def test_empty_row_is_skipped(client, secret):
+    before = len(storage.read("leads"))
+    data = _raw(client, secret, externalId="l:empty", createdTime="2026-08-06T07:39:23-05:00", platform="ig")
+    assert data["skipped"] is True and data["reason"] == "empty"
+    assert len(storage.read("leads")) == before
+
+
+@pytest.mark.parametrize("bad", ["bilmayman", "12345", "+998 90 abc 45 67", "0", "998901234567890123"])
+def test_invalid_phone_not_stored_as_phone(client, secret, bad):
+    lead = _post(client, secret, name="Yaroqsiz telefon", phone=bad)["lead"]
+    assert lead["phone"] == "" and lead["name"] == "Yaroqsiz telefon"
+
+
+def test_phone_alt_used_when_phone_number_invalid(client, secret):
+    lead = _post(client, secret, name="Alt", phone="noma'lum", phoneAlt="90 123 45 67")["lead"]
+    assert lead["phone"] == "90 123 45 67"
+    lead2 = _post(client, secret, name="Asosiy", phone="p:+998 (90) 777-66-55", phoneAlt="90 000 00 01")["lead"]
+    assert lead2["phone"] == "+998 (90) 777-66-55"
+
+
+def test_status_endpoint(client, secret):
+    assert client.get("/api/integrations/sheets/status").status_code == 401
+    assert client.get("/api/integrations/sheets/status", headers={"X-Sheets-Secret": "x"}).status_code == 401
+    first = client.get("/api/integrations/sheets/status", headers=secret).json()
+    _post(client, secret, name="Status", phone="+998901239900", externalId="l:st1", sheet="Sheet1")
+    second = client.get("/api/integrations/sheets/status", headers=secret).json()
+    assert first["storageId"] and first["storageId"] == second["storageId"]
+    assert second["leads"] == first["leads"] + 1 and second["sheetsLeads"] == first["sheetsLeads"] + 1
+
+
+def test_super_admin_gets_all_leads_via_api(client, secret):
+    _post(client, secret, name="API ko'rinish", phone="+998901239911", externalId="l:api1")
+    boss = login(client, "boss", "boss12345")
+    resp = client.get("/api/leads", headers=boss)
+    assert resp.status_code == 200
+    api_ids = {l["id"] for l in resp.json()}
+    assert api_ids == {l["id"] for l in storage.read("leads")}
+    assert client.get("/api/leads").status_code == 401  # JWT talabi o'zgarmagan

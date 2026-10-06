@@ -24,10 +24,19 @@
  * Dublikat: CRM avval `id`, keyin telefon bo'yicha tekshiradi — bir lead
  * ikki marta (hatto Sheet1 va Sheet3 da takrorlansa ham) qo'shilmaydi.
  *
+ * Ism yoki telefon bo'sh bo'lsa ham qator yuboriladi. Faqat butunlay bo'sh
+ * qator, sarlavha qatori va Meta test/dummy qatorlari CRM'ga tushmaydi
+ * (backend ham alohida tekshiradi). Yaroqsiz telefon telefon sifatida olinmaydi.
+ *
  * MUHIM: skript jadvalga HECH NARSA YOZMAYDI. Qaysi qator yuborilgani
  * skriptning o'z xotirasida (PropertiesService), har bir varaq uchun alohida
  * saqlanadi. CRM javob bermasa (tarmoq/server xatosi) qator "yuborilgan" deb
  * belgilanmaydi — keyingi ishga tushishda qayta yuboriladi (lead yo'qolmaydi).
+ *
+ * BACKEND MA'LUMOTLARI YO'QOLSA (masalan Render'da leads.json tozalansa):
+ * har ishga tushishda backenddagi `storageId` tekshiriladi. U o'zgargan bo'lsa
+ * skript barcha qatorlarni boshidan qayta yuboradi. Dublikatlar qayta
+ * qo'shilmaydi — mavjud lead faqat bo'sh maydonlari bilan yangilanadi.
  *
  * O'RNATISH:
  *  1. Google Sheetsda: Extensions → Apps Script.
@@ -78,6 +87,9 @@ const HEADER_ALIASES = {
 const LOCK_TIMEOUT_MS = 30 * 1000;
 const MAX_RUN_MS = 4.5 * 60 * 1000; // Apps Script 6 daqiqa limitidan oldin to'xtaymiz
 const LAST_ROW_PREFIX = 'sadaf_crm_last_synced_row:';
+const STORAGE_ID_KEY = 'sadaf_crm_storage_id';
+// Holat endpointi: .../sheets/lead → .../sheets/status
+const STATUS_URL = CRM_URL.replace(/\/lead\/?$/, '/status');
 
 /**
  * Asosiy funksiya — vaqt bo'yicha trigger shuni chaqiradi.
@@ -93,6 +105,7 @@ function syncNewLeads() {
   try {
     const startedAt = Date.now();
     const props = PropertiesService.getScriptProperties();
+    if (!checkBackendStorage(props)) return; // backend javob bermadi — keyingi safar
     const lastRows = {};
     SHEET_NAMES.forEach((name) => {
       lastRows[name] = Number(props.getProperty(LAST_ROW_PREFIX + name) || (DATA_START_ROW - 1));
@@ -122,7 +135,7 @@ function syncNewLeads() {
         }
         if (result === 'sent') sent++;
         else if (result === 'duplicate') duplicates++;
-        else skipped++;
+        else skipped++; // 'skip' — bo'sh / sarlavha / test qatori yoki CRM rad etdi
         lastSynced = rowNumber;
       }
 
@@ -133,6 +146,48 @@ function syncNewLeads() {
   } finally {
     lock.releaseLock();
   }
+}
+
+/**
+ * Backend ma'lumotlari yo'qolganini aniqlaydi. Backenddagi storageId oxirgi
+ * ko'rilganidan farq qilsa (yoki birinchi ishga tushish bo'lsa) — barcha
+ * varaqlar boshidan qayta yuboriladi.
+ * Qaytaradi: true — davom etish mumkin; false — backend javob bermadi.
+ */
+function checkBackendStorage(props) {
+  let response;
+  try {
+    response = UrlFetchApp.fetch(STATUS_URL, {
+      method: 'get',
+      headers: { 'X-Sheets-Secret': SHEETS_SECRET },
+      muteHttpExceptions: true
+    });
+  } catch (err) {
+    Logger.log('CRM holatini tekshirib bo\'lmadi (%s) — keyingi ishga tushishda qayta urinamiz.', err);
+    return false;
+  }
+  const code = response.getResponseCode();
+  if (code === 401) {
+    Logger.log('CRM maxfiy kalitni rad etdi (401). SHEETS_SECRET ni tekshiring.');
+    return false;
+  }
+  if (code !== 200) {
+    Logger.log('CRM holati olinmadi (HTTP %s) — keyingi ishga tushishda qayta urinamiz.', code);
+    return false;
+  }
+  let status;
+  try { status = JSON.parse(response.getContentText()); } catch (e) { return false; }
+
+  const known = props.getProperty(STORAGE_ID_KEY);
+  if (status.storageId && status.storageId !== known) {
+    SHEET_NAMES.forEach((name) => props.deleteProperty(LAST_ROW_PREFIX + name));
+    props.deleteProperty('sadaf_crm_last_synced_row'); // eski versiya kaliti
+    props.setProperty(STORAGE_ID_KEY, status.storageId);
+    Logger.log(known
+      ? 'Backend ma\'lumotlari yangilangan/tozalangan (leadlar: %s) — barcha qatorlar qayta yuboriladi.'
+      : 'Birinchi ulanish (backenddagi leadlar: %s) — barcha qatorlar tekshiriladi.', status.leads);
+  }
+  return true;
 }
 
 /**
@@ -238,13 +293,16 @@ function sendRow(sheetName, map, row, rowNumber) {
     return typeof v === 'number' ? v : String(v).trim();
   };
 
-  const name = text('name');
-  const phone = normalizePhone(cell('phoneFormatted'), cell('phoneRaw'));
-  if (!name || !phone) return 'skip'; // ism yoki telefon yo'q — lead emas
+  // Butunlay bo'sh qator (jadval o'rtasidagi bo'sh joy) — yuborilmaydi.
+  if (row.every((v) => v === null || v === undefined || String(v).trim() === '')) return 'skip';
 
+  const name = text('name');
+  // Ism/telefon bo'sh bo'lishi mumkin — qator baribir yuboriladi. Telefonni backend
+  // tekshiradi: phone_number yaroqsiz bo'lsa telefon_raqamingiz olinadi.
   const payload = {
     name: name,
-    phone: phone,
+    phone: stripPrefix(cell('phoneFormatted')),
+    phoneAlt: stripPrefix(cell('phoneRaw')),
     tour: text('tour'),
     people: numberOrNull('people'),
     amount: numberOrNull('amount'),
@@ -276,9 +334,15 @@ function sendRow(sheetName, map, row, rowNumber) {
 
   const code = response.getResponseCode();
   if (code >= 200 && code < 300) {
-    let duplicate = false;
-    try { duplicate = JSON.parse(response.getContentText()).duplicate === true; } catch (e) { /* javob JSON emas */ }
-    Logger.log('%s, %s-qator (%s): %s', sheetName, rowNumber, name, duplicate ? 'dublikat — qo\'shilmadi' : 'yangi lead');
+    let body = {};
+    try { body = JSON.parse(response.getContentText()) || {}; } catch (e) { /* javob JSON emas */ }
+    if (body.skipped) {
+      Logger.log('%s, %s-qator: o\'tkazib yuborildi (%s)', sheetName, rowNumber, body.reason);
+      return 'skip';
+    }
+    const duplicate = body.duplicate === true;
+    Logger.log('%s, %s-qator (%s): %s', sheetName, rowNumber, name || '—',
+      duplicate ? 'dublikat — mavjud lead yangilandi' : 'yangi lead');
     return duplicate ? 'duplicate' : 'sent';
   }
   if (code === 401) {
@@ -293,11 +357,9 @@ function sendRow(sheetName, map, row, rowNumber) {
   return 'retry';
 }
 
-/** "p:+998901234567" → "+998901234567"; phone_number bo'sh bo'lsa telefon_raqamingiz ishlatiladi. */
-function normalizePhone(formatted, raw) {
-  const f = String(formatted === null || formatted === undefined ? '' : formatted).trim();
-  if (f) return f.replace(/^p:/i, '').trim();
-  return String(raw === null || raw === undefined ? '' : raw).trim();
+/** "p:+998901234567" → "+998901234567" (yaroqliligini backend tekshiradi). */
+function stripPrefix(value) {
+  return String(value === null || value === undefined ? '' : value).trim().replace(/^p:/i, '').trim();
 }
 
 /**
@@ -347,20 +409,15 @@ function resetSyncState() {
   Logger.log('Holat tozalandi — keyingi syncNewLeads barcha qatorlarni tekshiradi.');
 }
 
-/** CRM_URL va SHEETS_SECRET to'g'ri sozlanganini tekshirish uchun — qo'lda ishga tushiring. */
+/**
+ * CRM_URL va SHEETS_SECRET to'g'ri sozlanganini tekshirish (CRM'ga lead YARATMAYDI).
+ * Backenddagi leadlar soni va ma'lumotlar identifikatorini ko'rsatadi.
+ */
 function testConnection() {
-  const options = {
-    method: 'post',
-    contentType: 'application/json',
+  const response = UrlFetchApp.fetch(STATUS_URL, {
+    method: 'get',
     headers: { 'X-Sheets-Secret': SHEETS_SECRET },
-    payload: JSON.stringify({
-      name: 'Test Lead',
-      phone: '+998900000000',
-      platform: 'test',
-      comment: 'testConnection() orqali yuborilgan sinov yozuvi'
-    }),
     muteHttpExceptions: true
-  };
-  const response = UrlFetchApp.fetch(CRM_URL, options);
+  });
   Logger.log('Test natijasi: %s — %s', response.getResponseCode(), response.getContentText());
 }
