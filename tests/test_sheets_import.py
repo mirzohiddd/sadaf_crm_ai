@@ -4,6 +4,7 @@ from __future__ import annotations
 import pytest
 
 from app import config, storage
+from app.services import assignment
 
 from .conftest import login
 
@@ -48,7 +49,9 @@ def test_meta_row_maps_only_crm_fields_and_leaves_rest_empty(client, secret):
     assert (lead["date"], lead["time"]) == ("06.08.2026", "07:39")
     # Jadvalda yo'q — bo'sh (taxmin qilinmaydi)
     assert lead["tour"] == "" and lead["people"] is None and lead["amount"] is None
-    assert lead["manager"] == "" and lead["telegram"] == "" and lead["city"] == ""
+    assert lead["telegram"] == "" and lead["city"] == ""
+    # Mas'ul menejer jadvalda yo'q — navbatdagi faol menejerga biriktiriladi
+    assert lead["manager"] in {a["name"] for a in assignment.active_admins()}
     # Faqat CRM maydonlari — Meta'ning qo'shimcha ustunlari leadga yozilmaydi
     for extra in ("campaign", "ad", "leadStatus", "platform", "formName"):
         assert extra not in lead

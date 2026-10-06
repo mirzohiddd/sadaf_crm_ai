@@ -241,6 +241,29 @@ def assignment_state(user: dict[str, Any] = Depends(require("leads", "read"))) -
     }
 
 
+@router.post("/rebalance")
+def rebalance_leads(
+    body: Loose | None = None,
+    user: dict[str, Any] = Depends(require("leads", "write")),
+) -> dict[str, Any]:
+    """Barcha mavjud leadlarni faol menejerlar orasida round-robin bilan qayta taqsimlaydi.
+
+    Faqat Bosh menejer (Super Admin) — leadlar bo'yicha global ko'rish huquqi
+    faqat unda. Body (ixtiyoriy): ``{"dryRun": true}`` — hech narsa saqlamasdan
+    natijani oldindan ko'rsatadi. Leadda faqat ``manager`` maydoni o'zgaradi.
+    """
+    if not is_global(user, "leads"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Faqat Bosh menejer qayta taqsimlay oladi.")
+    dry_run = bool((body.model_dump() if body else {}).get("dryRun"))
+    result = assignment.rebalance(user, dry_run=dry_run)
+    if not result["success"]:
+        raise HTTPException(status.HTTP_409_CONFLICT, result["error"])
+    if not dry_run:
+        notify.log(user.get("name", ""), "update", "lead", "Leadlar qayta taqsimlandi",
+                   {"total": result["total"], "changed": result["changed"]}, actor_id=int(user["id"]))
+    return result
+
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 def create_lead(body: LeadIn, user: dict[str, Any] = Depends(require("leads", "write"))) -> dict[str, Any]:
     data = body.model_dump()

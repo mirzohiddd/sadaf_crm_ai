@@ -101,12 +101,19 @@ def env(client):
     m1 = login(client, "manager1", "secret12")
     m2 = login(client, "manager2", "secret12")
 
+    # Navbatga Bosh menejer hisoblari ham kiradi — bu testlar 2 menejerli
+    # navbatni tekshiradi, shuning uchun ular ROUND_ROBIN_EXCLUDE_LOGINS bilan chetlanadi.
+    saved_exclude = config.ROUND_ROBIN_EXCLUDE_LOGINS
+    config.ROUND_ROBIN_EXCLUDE_LOGINS = {"boss", "menejer"}
     leads = []
-    for i in range(1, 5):
-        resp = client.post("/api/leads", headers=boss,
-                           json={"name": f"Lead {i}", "phone": f"+998 90 000 00 0{i}", "source": "Instagram"})
-        assert resp.status_code == 201, resp.text
-        leads.append(resp.json())
+    try:
+        for i in range(1, 5):
+            resp = client.post("/api/leads", headers=boss,
+                               json={"name": f"Lead {i}", "phone": f"+998 90 000 00 0{i}", "source": "Instagram"})
+            assert resp.status_code == 201, resp.text
+            leads.append(resp.json())
+    finally:
+        config.ROUND_ROBIN_EXCLUDE_LOGINS = saved_exclude
     return {"boss": boss, "m1": m1, "m2": m2, "ids": ids, "leads": leads}
 
 

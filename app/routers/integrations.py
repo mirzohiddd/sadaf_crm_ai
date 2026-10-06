@@ -283,8 +283,8 @@ def create_lead_from_sheet(
       Sheet1 va Sheet3 orasida ham. Bunda mavjud leadning FAQAT BO'SH
       maydonlari Sheets qiymati bilan to'ldiriladi (``updated`` — to'ldirilgan
       maydonlar ro'yxati); to'ldirilgan qiymatlar hech qachon almashtirilmaydi.
-    - Mas'ul menejer jadvalda bo'lmasa — lead biriktirilmagan holda qoladi
-      (uni Super Admin ko'radi va CRM'dan biriktiradi).
+    - Mas'ul menejer: jadvaldagi ism CRM'dagi faol menejerga mos kelsa — o'sha;
+      bo'lmasa yoki mos kelmasa — faol menejerlar orasida round-robin navbat bilan.
     - Ism va telefon majburiy EMAS: bo'lmasa "" saqlanadi va lead baribir yaratiladi
       (bu qoida faqat shu endpoint uchun; sayt arizasida ism/telefon majburiyligicha qoladi).
     """
@@ -341,13 +341,20 @@ def create_lead_from_sheet(
     if not any((name, phone, body.comment, body.telegram, body.tour, body.city)):
         return JSONResponse({"ok": True, "skipped": True, "reason": "empty"})
 
+    # Mas'ul menejer: jadvaldagi ism faol menejerga mos kelsa — o'sha, aks holda
+    # faol menejerlar orasida navbat bilan (round-robin, navbat saqlanadi).
+    manager = assignment.resolve_manager(body.manager)
+    if not manager:
+        assigned = assignment.next_admin()
+        manager = assigned.get("name", "") if assigned else ""
+
     data: dict[str, Any] = {
         "name": name,
         "phone": phone,
         "tour": body.tour,
         "people": body.people,
         "amount": body.amount,
-        "manager": body.manager,
+        "manager": manager,
         "source": _sheet_source(body.platform, body.source),
         "stage": _sheet_stage(body.leadStatus),
         "telegram": body.telegram,

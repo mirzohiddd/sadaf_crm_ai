@@ -7,7 +7,21 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
-DATA_DIR = Path(os.getenv("DATA_DIR") or (BASE_DIR / "data"))
+
+
+def _dir_from_env(name: str, default: Path) -> Path:
+    """Papka yo'lini env'dan oladi: bo'shliqlar tozalanadi, "~" ochiladi,
+    nisbiy yo'l backend papkasiga nisbatan olinadi. Berilmagan bo'lsa — default."""
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return default
+    path = Path(raw).expanduser()
+    return path if path.is_absolute() else BASE_DIR / path
+
+
+# Render: Persistent Disk `/var/data` ga ulanadi va DATA_DIR=/var/data beriladi.
+# Lokal development: DATA_DIR berilmaydi → backend/data ishlatiladi.
+DATA_DIR = _dir_from_env("DATA_DIR", BASE_DIR / "data")
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 EXPORT_DIR = DATA_DIR / "exports"
@@ -25,6 +39,13 @@ ADMIN_NAME = os.getenv("ADMIN_NAME", "Super Admin")
 # Eski moslik: "menejer" / "12345" Super Admin hisobini avtomatik yaratish.
 # Productionda "false" qiling (o'rniga ADMIN_LOGIN/ADMIN_PASSWORD ishlatiladi).
 SEED_LEGACY_MENEJER = os.getenv("SEED_LEGACY_MENEJER", "true").strip().lower() not in ("0", "false", "no", "off")
+
+# Lead round-robin: navbatga faol Menejerlar (admin) va faol Bosh menejer(lar)
+# (super_admin) kiradi. Navbatdan chiqarish kerak bo'lgan hisoblar loginlari
+# shu yerda vergul bilan (masalan ishlatilmaydigan eski "menejer" hisobi).
+ROUND_ROBIN_EXCLUDE_LOGINS = {
+    x.strip().lower() for x in os.getenv("ROUND_ROBIN_EXCLUDE_LOGINS", "").split(",") if x.strip()
+}
 
 # Xatolik tafsilotlarini (exception matni) API javobida ko'rsatish.
 # Productionda o'chiq qoldiring — ichki ma'lumot tashqariga chiqmasin.
@@ -82,7 +103,7 @@ XAI_TIMEOUT_SECONDS = float(os.getenv("XAI_TIMEOUT_SECONDS", "180"))
 # Qo'ng'iroq yozuvlari (audio) saqlanadigan papka. Hech qachon statik
 # (ochiq) papka sifatida berilmaydi — fayl faqat autentifikatsiya va
 # ruxsat tekshiruvidan keyin /api/calls/{id}/recording orqali uzatiladi.
-RECORDINGS_DIR = Path(os.getenv("RECORDINGS_DIR") or (DATA_DIR / "recordings"))
+RECORDINGS_DIR = _dir_from_env("RECORDINGS_DIR", DATA_DIR / "recordings")
 RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
 CALL_MAX_UPLOAD_MB = int(os.getenv("CALL_MAX_UPLOAD_MB", "100"))
 
