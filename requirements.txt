@@ -5,4 +5,5 @@ python-multipart==0.0.20
 PyJWT==2.10.1
 python-dotenv==1.0.1
 openpyxl==3.1.5
-httpx==0.28.1psycopg[binary]==3.2.3
+httpx==0.28.1
+psycopg[binary]==3.2.3
