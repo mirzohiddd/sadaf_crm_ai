@@ -46,7 +46,8 @@ def test_meta_row_maps_only_crm_fields_and_leaves_rest_empty(client, secret):
     assert lead["source"] == "Instagram"             # Manba ← platform
     assert lead["stage"] == "Yangi"                  # CREATED — CRM bosqichi emas
     assert lead["comment"] == "Turkiya haqida"
-    assert (lead["date"], lead["time"]) == ("06.08.2026", "07:39")
+    # created_time -05:00 → Toshkent (+05:00) vaqtiga o'giriladi: 07:39 (-05) = 17:39 (+05)
+    assert (lead["date"], lead["time"]) == ("06.08.2026", "17:39")
     # Jadvalda yo'q — bo'sh (taxmin qilinmaydi)
     assert lead["tour"] == "" and lead["people"] is None and lead["amount"] is None
     assert lead["telegram"] == "" and lead["city"] == ""
@@ -170,7 +171,8 @@ def test_duplicate_by_phone_fills_empty_name_rustamjon(client, secret, monkeypat
     assert lead["name"] == "Rustamjon"
     assert lead["phone"] == "+998901687722"                # mavjud telefon almashtirilmadi
     assert (lead["source"], lead["comment"]) == ("Instagram", "Sheets izohi")
-    assert (lead["date"], lead["time"]) == ("06.08.2026", "07:39")
+    # created_time -05:00 → Toshkent (+05:00) vaqtiga o'giriladi: 07:39 (-05) = 17:39 (+05)
+    assert (lead["date"], lead["time"]) == ("06.08.2026", "17:39")
     assert lead["createdAt"] == old["createdAt"]           # createdAt o'zgarmaydi
     assert lead["updatedAt"] == "2099-01-01T00:00:00+00:00"  # updatedAt yangilandi
     assert set(resp["updated"]) >= {"name", "source", "comment", "date", "time"}

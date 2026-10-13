@@ -11,6 +11,7 @@ from app import seed, storage
 from app.config import (
     APP_DEBUG,
     BASE_DIR,
+    BAZA_TABLE,
     DATA_DIR,
     CORS_ORIGINS,
     DEFAULT_JWT_SECRET,
@@ -20,6 +21,7 @@ from app.config import (
     GROQ_STT_MODEL,
     JWT_SECRET,
     ai_enabled,
+    baza_enabled,
     call_analysis_enabled,
     call_provider,
     call_stt_enabled,
@@ -29,6 +31,7 @@ from app.routers import (
     ai,
     attendance,
     auth,
+    baza,
     calls,
     crud,
     employees,
@@ -87,6 +90,8 @@ async def lifespan(_: FastAPI):
     if JWT_SECRET == DEFAULT_JWT_SECRET or len(JWT_SECRET) < 32:
         print("[sadaf] OGOHLANTIRISH: JWT_SECRET standart yoki juda qisqa. Productionda "
               "`openssl rand -hex 32` bilan yangi kalit yarating!")
+    baza_state = f"ulangan — jadval {BAZA_TABLE}" if baza_enabled() else "o'chiq (DATABASE_URL berilmagan)"
+    print(f"[sadaf] BAZA (PostgreSQL): {baza_state}")
     print("[sadaf] Real vaqtli sinxronizatsiya (WebSocket): yoqilgan")
     print("[sadaf] Lead eslatmalari: fon vazifasi yoqilgan (har 20s tekshiradi)")
     provider = call_provider()
@@ -107,7 +112,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(
     title="SADAF CRM API",
     version="1.0.0",
-    description="Turagentlik CRM backendi. Barcha ma'lumot JSON fayllarda saqlanadi.",
+    description="Turagentlik CRM backendi. Asosiy ma'lumotlar JSON fayllarda; BAZA ustuni — PostgreSQL (DATABASE_URL).",
     lifespan=lifespan,
 )
 
@@ -123,6 +128,7 @@ app.add_middleware(
 for router in (
     auth.router,
     employees.router,
+    baza.router,  # /api/leads/baza — leads routeridan oldin
     leads.router,
     crud.clients_router,
     crud.tours_router,
@@ -148,6 +154,7 @@ def health() -> dict[str, object]:
     return {
         "status": "ok",
         "ai": "groq" if ai_enabled() else "local",
+        "baza": {"postgres": baza_enabled()},
         "callCenter": {
             "stt": call_stt_enabled(),
             "analysis": call_analysis_enabled(),

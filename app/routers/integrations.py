@@ -33,7 +33,7 @@ from ..config import (
     WEBSITE_WEBHOOK_SECRET,
 )
 from ..schemas import SheetLeadIn, WebsiteLeadIn
-from ..services import assignment, notify
+from ..services import arrival, assignment, notify
 from ..services.crm import norm
 from . import leads as leads_router  # _sync_sale / _sync_client qayta ishlatish uchun
 
@@ -128,36 +128,50 @@ def _find_lead_by_external_id(external_id: Any) -> dict[str, Any] | None:
     return None
 
 
-# created_time ISO bo'lmasa (jadval sanani o'zi formatlagan bo'lsa) sinab ko'riladigan formatlar.
-_SHEET_DATE_FORMATS = (
-    "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d",
-    "%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M", "%d.%m.%Y",
-    "%m/%d/%Y %H:%M:%S", "%m/%d/%Y %H:%M", "%m/%d/%Y",
-)
+def _target_time(created_time: str) -> tuple[str, str, str]:
+    """Target (Meta Lead Ads) ``created_time`` ni o'qiydi.
 
+    Qaytaradi: (sana DD.MM.YYYY, vaqt HH:MM, arrivedAt ISO +05:00).
 
-def _split_created_time(created_time: str) -> tuple[str, str]:
-    """created_time ("2026-08-06T07:39:23-05:00") ni CRM formatiga o'giradi:
-    sana — DD.MM.YYYY, vaqt — HH:MM (vaqt ko'rsatilmagan bo'lsa — bo'sh).
-
-    created_time bo'sh yoki o'qib bo'lmaydigan bo'lsa — sana/vaqt BO'SH qoladi
-    (taxmin qilinmaydi; importning o'z vaqti ``createdAt`` da saqlanadi).
+    - Vaqt zonasi bilan kelgan qiymat ("2026-08-06T07:39:23-05:00") avval
+      Asia/Tashkent vaqtiga o'giriladi — shunda CRM'da ko'rinadigan sana va
+      sana filtri lead HAQIQATAN kelgan Toshkent kuniga mos keladi.
+    - Zonasiz qiymat ("07.08.2026 14:30") Toshkent vaqti deb olinadi.
+    - Bo'sh yoki o'qib bo'lmaydigan bo'lsa — ("", "", ""): hech narsa taxmin
+      qilinmaydi (bunda kelish vaqti sifatida CRM qabul qilgan vaqt yoziladi).
     """
-    text = (created_time or "").strip()
-    if not text:
-        return "", ""
-    try:
-        dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
-        return dt.strftime("%d.%m.%Y"), dt.strftime("%H:%M")
-    except ValueError:
-        pass
-    for fmt in _SHEET_DATE_FORMATS:
-        try:
-            dt = datetime.strptime(text, fmt)
-        except ValueError:
-            continue
-        return dt.strftime("%d.%m.%Y"), (dt.strftime("%H:%M") if "%H" in fmt else "")
-    return "", ""
+    parsed = arrival.parse_moment(created_time)
+    if not parsed:
+        return "", "", ""
+    dt, has_time = parsed
+    day, hhmm = arrival.display_parts(dt, has_time)
+    return day, hhmm, arrival.to_iso(dt)
+
+
+def _target_original(created_time: str) -> str:
+    """Asl ``created_time`` (o'z vaqt zonasi bilan) — audit uchun ISO ko'rinishida."""
+    parsed = arrival.parse_moment(created_time)
+    return parsed[0].isoformat(timespec="seconds") if parsed else ""
+
+
+def _refine_arrival(lead_id: int, arrived_at: str, original: str) -> dict[str, Any] | None:
+    """Dublikat qator qayta kelganda: leadning kelish vaqti hali aniq bo'lmasa
+    (eski lead yoki created_time'siz kelgan) — target'ning haqiqiy vaqti yoziladi.
+    Aniq (target/crm/website/baza) vaqt hech qachon almashtirilmaydi."""
+
+    def _do(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+        for row in rows:
+            if int(row.get("id", 0)) != int(lead_id):
+                continue
+            if row.get("arrivedAtSource") in (None, "", "legacy", "webhook"):
+                row["arrivedAt"] = arrived_at
+                row["arrivedAtSource"] = "target"
+                row["targetCreatedAt"] = original
+                row["updatedAt"] = storage.now_iso()
+            return dict(row)
+        return None
+
+    return storage.mutate("leads", _do)
 
 
 def _sheet_stage(lead_status: str) -> str:
@@ -304,7 +318,8 @@ def create_lead_from_sheet(
     # Telefon bo'sh bo'lsa telefon bo'yicha tekshirilmaydi (_find_lead_by_phone bo'sh raqamni o'tkazib yuboradi).
     external_id = body.externalId.strip()
     existing = _find_lead_by_external_id(external_id) or _find_lead_by_phone(phone)
-    date, time = _split_created_time(body.createdTime)
+    date, time, arrived_at = _target_time(body.createdTime)
+    target_original = _target_original(body.createdTime)
 
     if existing:
         # Yangi lead YARATILMAYDI — mavjud leadning faqat bo'sh maydonlari to'ldiriladi
@@ -329,6 +344,9 @@ def create_lead_from_sheet(
         }
         lead, filled = _fill_empty_lead_fields(int(existing["id"]), incoming)
         lead = lead or existing
+        if arrived_at and lead.get("arrivedAtSource") in (None, "", "legacy", "webhook"):
+            lead = _refine_arrival(int(lead["id"]), arrived_at, target_original) or lead
+            filled.append("arrivedAt")
         if filled:
             # Bosqich/summa to'ldirilgan bo'lsa — savdo/mijoz sinxronizatsiyasi odatdagidek.
             leads_router._sync_sale(lead)
@@ -364,7 +382,13 @@ def create_lead_from_sheet(
         "seenBy": [],        # hamma admin uchun "yangi" badge sifatida ko'rinadi
         "date": date,
         "time": time,
+        # Lead target'dan HAQIQATAN kelgan vaqt (sana filtri shunga tayanadi).
+        # created_time bo'lmasa — CRM so'rovni qabul qilgan vaqt.
+        "arrivedAt": arrived_at or arrival.now_arrival(),
+        "arrivedAtSource": "target" if arrived_at else "webhook",
     }
+    if target_original:
+        data["targetCreatedAt"] = target_original
     # Texnik maydonlar (ekranda ko'rinmaydi) — faqat dublikatni aniqlash va kuzatuv uchun.
     if external_id:
         data["externalId"] = external_id
@@ -476,6 +500,8 @@ def create_lead_from_website(
         "date": storage.today_uz(),
         "time": storage.now_time(),
         "createdAt": now_iso,
+        "arrivedAt": arrival.now_arrival(),
+        "arrivedAtSource": "website",
     }
     # Ariza formasidagi qo'shimcha maydonlar — mavjud Leads strukturasi
     # (name/phone/tour/stage/...) o'zgarmaydi, faqat qo'shimcha saqlanadi.

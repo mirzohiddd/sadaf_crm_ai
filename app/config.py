@@ -173,3 +173,22 @@ SHEETS_DEFAULT_SOURCE = os.getenv("SHEETS_DEFAULT_SOURCE", "Google Sheets")
 WEBSITE_WEBHOOK_SECRET = os.getenv("WEBSITE_WEBHOOK_SECRET", "dev-website-secret-change-me")
 # Lead Form'dan `source` maydoni kelmasa shu qiymat ishlatiladi.
 WEBSITE_DEFAULT_SOURCE = os.getenv("WEBSITE_DEFAULT_SOURCE", "Veb-sayt")
+
+# ——— PostgreSQL "BAZA" (Leadlar Kanbanidagi BAZA ustuni) ———
+# Leadlar sahifasidagi "BAZA" ustuni shu PostgreSQL bazasidagi leadlarni
+# ko'rsatadi. Bo'sh qoldirilsa ustun "ulanmagan" holatida ko'rinadi —
+# qolgan CRM odatdagidek ishlaydi (asosiy ma'lumotlar JSON fayllarda).
+# Misol: postgresql://user:parol@host:5432/sadaf   (Render "Internal Database URL")
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+# Leadlar jadvali ("schema.jadval" ham mumkin). Ustunlar nomi bo'yicha
+# avtomatik topiladi (name/ism, phone/telefon, created_at/sana ...).
+BAZA_TABLE = os.getenv("BAZA_TABLE", "baza_leads").strip() or "baza_leads"
+# Jadval mavjud bo'lmasa avtomatik yaratilsinmi.
+BAZA_AUTO_CREATE = os.getenv("BAZA_AUTO_CREATE", "true").strip().lower() not in ("0", "false", "no", "off")
+# Ustunda bir vaqtda ko'rsatiladigan maksimal yozuvlar soni.
+BAZA_LIMIT = int(os.getenv("BAZA_LIMIT", "300"))
+BAZA_CONNECT_TIMEOUT = int(os.getenv("BAZA_CONNECT_TIMEOUT", "5"))
+
+
+def baza_enabled() -> bool:
+    return bool(DATABASE_URL)

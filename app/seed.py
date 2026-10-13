@@ -101,6 +101,39 @@ def run() -> None:
     if SEED_LEGACY_MENEJER:
         ensure_super_admin("menejer", "12345", "Menejer")
     _warn_default_passwords()
+    backfill_lead_arrivals()
+
+
+def backfill_lead_arrivals() -> int:
+    """Bir martalik migratsiya: ``arrivedAt`` maydoni yo'q eski leadlarga
+    kelish vaqtini ``date``+``time`` (bo'lmasa ``createdAt``) dan tiklab yozadi.
+
+    Bunday leadlar ``arrivedAtSource = "legacy"`` bilan belgilanadi — Google
+    Sheets skripti shu leadni qayta yuborsa, target'ning aniq ``created_time``
+    qiymati bilan avtomatik aniqlashtiriladi. Boshqa maydonlar o'zgarmaydi.
+    """
+    from .services import arrival
+
+    if not any(not l.get("arrivedAt") and arrival.legacy_arrival(l) for l in storage.read("leads")):
+        return 0  # migratsiya kerak emas — fayl qayta yozilmaydi
+
+    def _do(rows: list[dict[str, Any]]) -> int:
+        changed = 0
+        for row in rows:
+            if row.get("arrivedAt"):
+                continue
+            iso = arrival.legacy_arrival(row)
+            if not iso:
+                continue
+            row["arrivedAt"] = iso
+            row["arrivedAtSource"] = "legacy"
+            changed += 1
+        return changed
+
+    changed = storage.mutate("leads", _do)
+    if changed:
+        print(f"[seed] {changed} ta eski leadga kelish vaqti (arrivedAt) tiklandi")
+    return changed
 
 
 _WEAK_PASSWORDS = ("12345", "admin123", "123456", "password")

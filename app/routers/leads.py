@@ -5,13 +5,13 @@ import re
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from .. import storage
 from ..deps import ensure_access, is_global, require, scope_rows
 from ..schemas import LeadCommentIn, LeadIn, Loose, StageIn
 from ..services import notify
-from ..services import assignment
+from ..services import arrival, assignment
 from ..services.crm import WON_STAGES
 
 router = APIRouter(prefix="/api/leads", tags=["leads"])
@@ -182,9 +182,31 @@ def delete_comment(
     return storage.update("leads", lead_id, _comments_patch(comments)) or current
 
 
+def parse_range(date_from: str | None, date_to: str | None):
+    """?dateFrom=&dateTo= parametrlarini o'qiydi (YYYY-MM-DD yoki DD.MM.YYYY)."""
+    try:
+        start = arrival.parse_day(date_from, "dateFrom")
+        end = arrival.parse_day(date_to, "dateTo")
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    if start and end and start > end:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Boshlanish sanasi tugash sanasidan keyin bo'lishi mumkin emas.")
+    return start, end
+
+
 @router.get("")
-def list_leads(user: dict[str, Any] = Depends(require("leads", "read"))) -> list[dict[str, Any]]:
-    return scope_rows(storage.read("leads"), user, resource="leads")
+def list_leads(
+    date_from: str | None = Query(default=None, alias="dateFrom"),
+    date_to: str | None = Query(default=None, alias="dateTo"),
+    user: dict[str, Any] = Depends(require("leads", "read")),
+) -> list[dict[str, Any]]:
+    """Leadlar ro'yxati. Ixtiyoriy ``dateFrom``/``dateTo`` — lead HAQIQIY kelgan
+    sana (``arrivedAt``, Toshkent vaqti) bo'yicha, ikkala chegara ham kiradi."""
+    rows = scope_rows(storage.read("leads"), user, resource="leads")
+    start, end = parse_range(date_from, date_to)
+    if start or end:
+        rows = [r for r in rows if arrival.in_range(r, start, end)]
+    return rows
 
 
 @router.get("/stages")
@@ -269,6 +291,10 @@ def create_lead(body: LeadIn, user: dict[str, Any] = Depends(require("leads", "w
     data = body.model_dump()
     data.setdefault("date", storage.today_uz())
     data.setdefault("time", storage.now_time())
+    # Haqiqiy kelish vaqti — sana filtri shunga tayanadi (formadagi "Sana"
+    # maydoni tahrirlansa ham o'zgarmaydi).
+    data["arrivedAt"] = arrival.now_arrival()
+    data["arrivedAtSource"] = "crm"
     data["ownerId"] = int(user["id"])
     # Yaratuvchi leadni allaqachon ko'rgan hisoblanadi — badge unga yangi
     # ko'rsatilmaydi, boshqa barcha adminlar uchun esa "yangi" bo'lib qoladi.
@@ -319,7 +345,9 @@ def update_lead(
     # "comments"/"comment" ham faqat /comments endpointlari orqali o'zgaradi —
     # aks holda ochiq turgan eski forma boshqa hodim qo'shgan kommentariyani
     # o'chirib yuborishi mumkin edi.
-    patch = {k: v for k, v in body.model_dump().items() if k not in ("id", "ownerId", "seenBy", "comments", "comment")}
+    # arrivedAt/targetCreatedAt — lead kelgan haqiqiy vaqt, faqat integratsiya yozadi.
+    protected = {"id", "ownerId", "seenBy", "comments", "comment", *arrival.ARRIVAL_FIELDS}
+    patch = {k: v for k, v in body.model_dump().items() if k not in protected}
 
     # Operator va oddiy Admin "Mas'ul odam"ni o'zgartira olmaydi — bu maydon
     # faqat Super Admin uchun ochiq.
