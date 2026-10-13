@@ -18,7 +18,12 @@ router = APIRouter(prefix="/api/leads", tags=["leads"])
 
 STAGES = (
     "Yangi", "Mijoz bilan bog'lanilmadi", "Bog'lanildi", "Taklif yuborildi",
-    "To'lov qilindi", "Bron tasdiqlandi", "Bekor qilindi", "Sifatsiz lead",
+    "To'lov qilindi", "Bron tasdiqlandi", "Bekor qilindi",
+    # BAZA — CRM ichidagi leadlar bazasi (alohida ma'lumotlar bazasi emas):
+    # hozircha ishlanmaydigan leadlar shu ustunda saqlanadi. Kanbanda
+    # "Sifatsiz lead" ustunining darhol chap tomonida turadi.
+    "Baza",
+    "Sifatsiz lead",
 )
 
 # Lead shu bosqichga o'tganda Mijozlar bazasiga avtomatik qo'shiladi.
