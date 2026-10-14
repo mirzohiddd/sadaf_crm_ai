@@ -313,11 +313,18 @@ def create_lead(body: LeadIn, user: dict[str, Any] = Depends(require("leads", "w
     # leadni istalgan adminga/hodimga biriktira oladi.
     if not is_global(user, "leads") and user.get("role") in ("operator", "admin"):
         data["manager"] = user.get("name", "")
-    elif not data.get("manager"):
-        # Super Admin "Mas'ul odam"ni tanlamasa — lead aktiv adminlar
-        # orasida navbat bilan (round-robin) avtomatik taqsimlanadi.
-        assigned = assignment.next_admin()
-        data["manager"] = assigned.get("name", "") if assigned else user.get("name", "")
+    else:
+        # Leadlar faqat hodimlarga tushadi — Bosh menejerga biriktirib bo'lmaydi.
+        if assignment.is_boss_name(data.get("manager", "")):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                                "Bosh menejerga lead biriktirib bo'lmaydi. Hodimni tanlang.")
+        if not data.get("manager"):
+            # Super Admin "Mas'ul odam"ni tanlamasa — lead faol hodimlar
+            # orasida navbat bilan (round-robin) avtomatik taqsimlanadi.
+            # Faol hodim bo'lmasa — lead biriktirilmagan holda qoladi
+            # (Bosh menejerga tushmaydi, lekin u ro'yxatda ko'radi).
+            assigned = assignment.next_admin()
+            data["manager"] = assigned.get("name", "") if assigned else ""
 
     created = storage.insert("leads", data)
     _sync_sale(created)
@@ -358,6 +365,10 @@ def update_lead(
     # faqat Super Admin uchun ochiq.
     if not is_global(user, "leads") and user.get("role") in ("operator", "admin"):
         patch.pop("manager", None)
+    elif "manager" in patch and patch.get("manager") != current.get("manager") \
+            and assignment.is_boss_name(patch.get("manager", "")):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "Bosh menejerga lead biriktirib bo'lmaydi. Hodimni tanlang.")
 
     updated = storage.update("leads", lead_id, patch)
     if updated:

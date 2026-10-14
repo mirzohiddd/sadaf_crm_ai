@@ -16,8 +16,8 @@ def test_login_me_logout(client):
 
 def test_lead_crud_stage_comments_reminders(client):
     boss = login(client, "boss", "boss12345")
-    lead = client.post("/api/leads", headers=boss, json={"name": "Regress", "phone": "+998 91 111 11 11",
-                                                         "manager": "Bosh Menejer"}).json()
+    # Mas'ul ko'rsatilmaydi — Bosh menejerga lead biriktirib bo'lmaydi (faqat hodimlarga tushadi)
+    lead = client.post("/api/leads", headers=boss, json={"name": "Regress", "phone": "+998 91 111 11 11"}).json()
     lid = lead["id"]
     assert client.patch(f"/api/leads/{lid}/stage", headers=boss, json={"stage": "Bog'lanildi"}).status_code == 200
     assert client.post(f"/api/leads/{lid}/comments", headers=boss, json={"text": "test"}).status_code == 201

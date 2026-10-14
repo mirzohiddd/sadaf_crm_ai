@@ -5,7 +5,7 @@ ruxsat tekshiruvi, scoping, jurnal va bildirishnoma bir joyda.
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable, Optional
 
 from fastapi import APIRouter, Depends, status
 
@@ -13,6 +13,7 @@ from .. import storage
 from ..deps import ensure_access, is_global, require, scope_rows
 from ..schemas import Loose
 from ..services import notify
+from ..services import tours as tours_service
 
 
 def make_router(
@@ -23,7 +24,10 @@ def make_router(
     scoped: bool,
     notify_admins: bool = False,
     notify_title: str = "",
+    prepare: Optional[Callable[..., dict[str, Any]]] = None,
 ) -> APIRouter:
+    """``prepare(data, partial=bool)`` — ixtiyoriy tekshiruv/normallashtirish
+    (masalan turlar uchun: majburiy maydonlar, so'mdagi narx, ketish sanasi)."""
     router = APIRouter(prefix=prefix, tags=[collection])
 
     @router.get("")
@@ -36,6 +40,8 @@ def make_router(
         body: Loose, user: dict[str, Any] = Depends(require(collection, "write"))
     ) -> dict[str, Any]:
         data = {k: v for k, v in body.model_dump().items() if k != "id"}
+        if prepare:
+            data = prepare(data, partial=False)
         if scoped:
             data["ownerId"] = int(user["id"])
             if user.get("role") == "operator" or not data.get("manager"):
@@ -65,6 +71,8 @@ def make_router(
             ensure_access(None, user)
 
         patch = {k: v for k, v in body.model_dump().items() if k not in ("id", "ownerId")}
+        if prepare:
+            patch = prepare(patch, partial=True)
         if scoped and user.get("role") == "operator":
             patch.pop("manager", None)
 
@@ -100,6 +108,7 @@ clients_router = make_router(
 
 tours_router = make_router(
     collection="tours", prefix="/api/tours", entity="tour", scoped=False,
+    prepare=tours_service.prepare,
 )
 
 sales_router = make_router(

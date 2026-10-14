@@ -83,12 +83,13 @@ def import_baza_lead(
             lead_id = int(existing["id"]) if existing else row.get("crmLeadId")
             raise HTTPException(status.HTTP_409_CONFLICT, f"Bu lead CRM'da allaqachon mavjud (#{lead_id}).")
 
-        # Mas'ul: Operator/Admin — o'zi; Bosh menejer — round-robin (create_lead bilan bir xil).
+        # Mas'ul: Operator/Admin — o'zi; Bosh menejer — hodimlar orasida round-robin
+        # (create_lead bilan bir xil). Bosh menejerning o'ziga lead tushmaydi.
         if not is_global(user, "leads") and user.get("role") in ("operator", "admin"):
             manager = user.get("name", "")
         else:
             assigned = assignment.next_admin()
-            manager = assigned.get("name", "") if assigned else user.get("name", "")
+            manager = assigned.get("name", "") if assigned else ""
 
         comment = row.get("comment", "")
         data: dict[str, Any] = {

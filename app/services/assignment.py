@@ -6,8 +6,10 @@ kolleksiyasida (JSON faylda) saqlanadi — shuning uchun server qayta ishga
 tushganda ham navbat 1-menejerdan qaytadan boshlanmaydi, oxirgi to'xtagan
 joyidan davom etadi.
 
-Navbatga kiradi: roli "admin" (Menejer) yoki "super_admin" (Bosh menejer)
-bo'lgan FAOL foydalanuvchilar, ID bo'yicha barqaror tartibda.
+Navbatga FAQAT hodimlar kiradi: roli "admin" (Menejer) bo'lgan FAOL
+foydalanuvchilar, ID bo'yicha barqaror tartibda. Bosh menejer
+("super_admin") navbatga kirmaydi va unga lead biriktirilmaydi — u barcha
+hodimlarning leadlarini faqat kuzatib boradi.
 .env dagi ROUND_ROBIN_EXCLUDE_LOGINS dagi loginlar navbatga kirmaydi.
 
 Lead kimga biriktirilgani — ``lead.manager`` maydoni (menejer ismi);
@@ -20,7 +22,7 @@ from typing import Any
 from .. import config, storage
 
 STATE_ID = 1
-ROTATION_ROLES = ("admin", "super_admin")
+ROTATION_ROLES = ("admin",)
 
 
 def _ensure_state(rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -89,6 +91,17 @@ def next_admin() -> dict[str, Any] | None:
         return chosen
 
     return storage.mutate("lead_assignment", _do)
+
+
+def is_boss_name(name: str) -> bool:
+    """Ism Bosh menejer (super_admin) hisobiga tegishlimi — unga lead biriktirilmaydi."""
+    wanted = (name or "").strip().lower()
+    if not wanted:
+        return False
+    return any(
+        u.get("role") == "super_admin" and str(u.get("name") or "").strip().lower() == wanted
+        for u in storage.read("users")
+    )
 
 
 def resolve_manager(name: str) -> str:

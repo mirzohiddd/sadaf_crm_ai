@@ -1,1 +1,158 @@
-[]
+[
+  {
+    "leadId": 1,
+    "managerId": 2,
+    "provider": "groq",
+    "model": "openai/gpt-oss-120b",
+    "transcriptVersion": 1,
+    "result": {
+      "rating": {
+        "key": "poor",
+        "label": "Yomon"
+      },
+      "score": 20,
+      "summary": "Agent suhbatni boshlamadi, salomlashish, hurmat, savollar va mahsulot haqida ma'lumot berish kabi asosiy elementlar yetishmadi. Mijozning ehtiyojlari, byudjeti va qiziqishi aniqlanmagan, shuning uchun savdo imkoniyati past darajada.",
+      "communication": {
+        "rating": {
+          "key": "poor",
+          "label": "Yomon"
+        },
+        "items": [
+          {
+            "key": "greeting",
+            "label": "Salomlashish",
+            "status": "fail",
+            "comment": "Agent salomlashmadi"
+          },
+          {
+            "key": "respect",
+            "label": "Hurmat",
+            "status": "fail",
+            "comment": "Mijozga hurmat ko'rsatilmagan"
+          },
+          {
+            "key": "clarity",
+            "label": "Aniq gapirish",
+            "status": "fail",
+            "comment": "Agentning so'zlari yo'q, tushunarlilik yo'q"
+          },
+          {
+            "key": "answered_questions",
+            "label": "Mijoz savollariga javob",
+            "status": "fail",
+            "comment": "Mijoz savol berilmagan, javob berilmadi"
+          },
+          {
+            "key": "manners",
+            "label": "Muomala madaniyati",
+            "status": "fail",
+            "comment": "Muloqot etiketiga rioya qilinmagan"
+          },
+          {
+            "key": "no_rude_language",
+            "label": "Nomaqbul / qo'pol iboralar yo'q",
+            "status": "pass",
+            "comment": "Hech qanday qo'pol ibora yo'q"
+          }
+        ]
+      },
+      "sales": {
+        "rating": {
+          "key": "poor",
+          "label": "Yomon"
+        },
+        "items": [
+          {
+            "key": "needs",
+            "label": "Mijoz ehtiyojini aniqlash",
+            "status": "na",
+            "comment": "Mijozning ehtiyojlari aniqlanmagan"
+          },
+          {
+            "key": "budget",
+            "label": "Budjetni aniqlash",
+            "status": "na",
+            "comment": "Byudjet haqida ma'lumot yo'q"
+          },
+          {
+            "key": "interest",
+            "label": "Qiziqishni aniqlash",
+            "status": "na",
+            "comment": "Qiziqish ifodalangan emas"
+          },
+          {
+            "key": "product_explained",
+            "label": "Mahsulot / tur haqida tushuntirish",
+            "status": "na",
+            "comment": "Mahsulot tushuntirilmagan"
+          },
+          {
+            "key": "price_explained",
+            "label": "Narxni tushuntirish",
+            "status": "na",
+            "comment": "Narx haqida ma'lumot berilmagan"
+          },
+          {
+            "key": "benefits_explained",
+            "label": "Afzalliklarni tushuntirish",
+            "status": "na",
+            "comment": "Foydalar tushuntirilmagan"
+          },
+          {
+            "key": "objection_handling",
+            "label": "E'tirozlar bilan ishlash",
+            "status": "na",
+            "comment": "E'tirozlar yo'q"
+          },
+          {
+            "key": "cta",
+            "label": "CTA (aniq taklif / harakatga chaqiruv)",
+            "status": "na",
+            "comment": "Chaqiriq yo'q"
+          },
+          {
+            "key": "follow_up",
+            "label": "Follow-up (keyingi aloqa kelishilgan)",
+            "status": "na",
+            "comment": "Kuzatuv rejalashtirilmagan"
+          }
+        ]
+      },
+      "lead": {
+        "interest": "Aniqlanmagan",
+        "mainNeed": "Aniqlanmagan",
+        "mainProblem": "Aniqlanmagan",
+        "budget": "Aniqlanmagan",
+        "travelDate": "Aniqlanmagan",
+        "salesOpportunity": {
+          "key": "low",
+          "label": "Past"
+        },
+        "salesOpportunityReason": "Mijoz bilan hech qanday savdo suhbati bo'lmadi",
+        "nextStep": "Aniqlanmagan"
+      },
+      "problems": [
+        "Agent salomlashmadi",
+        "Mijozga hurmat ko'rsatilmagan",
+        "Muloqotda aniq ma'lumot berilmagan",
+        "Savollarga javob berilmadi"
+      ],
+      "recommendations": [
+        "Agent suhbat boshida salomlashishi kerak",
+        "Mijozga hurmat bilan muomala qilishi lozim",
+        "Mijozning ehtiyojlari va savollarini aniqlash uchun savollar berish",
+        "Mijozga mahsulot yoki xizmat haqida ma'lumot berish"
+      ],
+      "inappropriatePhrases": [],
+      "followUp": {
+        "agreed": false,
+        "when": ""
+      }
+    },
+    "id": 1,
+    "callId": 1,
+    "version": 1,
+    "createdAt": "2026-10-05T04:16:32+00:00",
+    "updatedAt": "2026-10-05T04:16:32+00:00"
+  }
+]

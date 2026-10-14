@@ -60,15 +60,24 @@ def test_meta_row_maps_only_crm_fields_and_leaves_rest_empty(client, secret):
 
 
 def test_optional_crm_columns_are_used_when_present(client, secret):
-    lead = _post(
-        client, secret,
-        name="Jasur Toshev", phone=998977770002, tour="Dubay", people=3, amount="1 500 $",
-        manager="Menejer", platform="Telegram", leadStatus="bog\u2018lanildi", telegram="@jasur",
-        city="Samarqand", comment="VIP", createdTime="07.08.2026 14:30", externalId="x-9002", sheet="Sheet3",
-    )["lead"]
+    # Jadvaldagi "Mas'ul" ustuni faol hodimga (Menejer roli) mos kelsa — o'shanga tushadi
+    worker = storage.insert("users", {"name": "Sheets Hodim", "login": "sheets_hodim", "role": "admin", "active": True})
+    try:
+        lead = _post(
+            client, secret,
+            name="Jasur Toshev", phone=998977770002, tour="Dubay", people=3, amount="1 500 $",
+            manager="sheets hodim", platform="Telegram", leadStatus="bog\u2018lanildi", telegram="@jasur",
+            city="Samarqand", comment="VIP", createdTime="07.08.2026 14:30", externalId="x-9002", sheet="Sheet3",
+        )["lead"]
+        # Bosh menejer ("Menejer" — super_admin hisobi) ismi ustunda bo'lsa ham unga tushmaydi
+        boss_row = _post(client, secret, name="Boss ustun", phone="+998977770099", manager="Menejer",
+                         externalId="x-9099", sheet="Sheet3")["lead"]
+    finally:
+        storage.delete("users", int(worker["id"]))
+    assert boss_row["manager"] != "Menejer"
     assert lead["phone"] == "998977770002"
     assert (lead["tour"], lead["people"], lead["amount"]) == ("Dubay", 3, 1500.0)
-    assert lead["manager"] == "Menejer"
+    assert lead["manager"] == "Sheets Hodim"
     assert lead["source"] == "Telegram"
     assert lead["stage"] == "Bog'lanildi"           # apostrof turi va registr farq qilmaydi
     assert (lead["telegram"], lead["city"]) == ("@jasur", "Samarqand")

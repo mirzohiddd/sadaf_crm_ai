@@ -218,8 +218,10 @@ class ClientIn(Loose):
 class TourIn(Loose):
     name: str
     country: str = ""
+    departureDate: str = ""  # Ketish sanasi (YYYY-MM-DD)
     days: int = 1
-    price: float = 0
+    price: float = 0  # So'mda
+    currency: str = "UZS"
     seats: int = 0
     status: str = "Faol"
 

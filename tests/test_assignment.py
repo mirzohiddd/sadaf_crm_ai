@@ -44,8 +44,9 @@ def _seed_leads(n, manager="Bosh Menejer"):
     ])
 
 
-def test_active_managers_include_boss_and_skip_inactive_and_operators(iso):
-    assert [a["name"] for a in assignment.active_admins()] == ["Bosh Menejer", "Menejer 1", "Menejer 2"]
+def test_active_managers_exclude_boss_inactive_and_operators(iso):
+    # Bosh menejer navbatga kirmaydi — leadlar faqat hodimlarga tushadi
+    assert [a["name"] for a in assignment.active_admins()] == ["Menejer 1", "Menejer 2"]
 
 
 def test_rebalance_840_leads_evenly_in_order(client, iso):
@@ -55,11 +56,11 @@ def test_rebalance_840_leads_evenly_in_order(client, iso):
     assert resp.status_code == 200, resp.text
     data = resp.json()
     assert data["success"] is True and data["total"] == 840
-    assert [(m["name"], m["leads"]) for m in data["managers"]] == [
-        ("Bosh Menejer", 280), ("Menejer 1", 280), ("Menejer 2", 280)]
+    assert [(m["name"], m["leads"]) for m in data["managers"]] == [("Menejer 1", 420), ("Menejer 2", 420)]
 
     leads = sorted(storage.read("leads"), key=lambda l: l["id"])
-    assert [l["manager"] for l in leads[:6]] == ["Bosh Menejer", "Menejer 1", "Menejer 2"] * 2
+    assert [l["manager"] for l in leads[:6]] == ["Menejer 1", "Menejer 2"] * 3
+    assert all(l["manager"] != "Bosh Menejer" for l in leads)
     # Faqat manager (va o'zgargan leadda updatedAt) o'zgaradi
     for lead in leads:
         old = before[lead["id"]]
@@ -67,14 +68,14 @@ def test_rebalance_840_leads_evenly_in_order(client, iso):
             assert lead[key] == old[key]
     assert len(leads) == 840                                   # yangi lead/dublikat yo'q
     # Lead 840 → Menejer 2 bo'ldi, keyingisi — navbat boshidan
-    assert data["nextManager"]["name"] == "Bosh Menejer"
+    assert data["nextManager"]["name"] == "Menejer 1"
 
 
 def test_uneven_count_differs_by_at_most_one(client, iso):
-    _seed_leads(10)
+    _seed_leads(11)
     data = client.post("/api/leads/rebalance", headers=iso["boss"]).json()
-    assert [m["leads"] for m in data["managers"]] == [4, 3, 3]
-    assert data["nextManager"]["name"] == "Menejer 1"          # lead 10 → Bosh Menejer
+    assert [m["leads"] for m in data["managers"]] == [6, 5]
+    assert data["nextManager"]["name"] == "Menejer 2"          # lead 11 → Menejer 1
 
 
 def test_new_sheets_leads_continue_queue_after_rebalance(client, iso, tmp_path):
@@ -86,10 +87,10 @@ def test_new_sheets_leads_continue_queue_after_rebalance(client, iso, tmp_path):
                            json={"name": f"Yangi {i}", "phone": f"+99891{i:07d}", "externalId": f"rr-{i}"})
         assert resp.status_code == 201, resp.text
         got.append(resp.json()["lead"]["manager"])
-    assert got == ["Bosh Menejer", "Menejer 1", "Menejer 2", "Bosh Menejer"]
+    assert got == ["Menejer 1", "Menejer 2", "Menejer 1", "Menejer 2"]
     # Navbat faylda saqlanadi — restartdan keyin ham shu joydan davom etadi
     state = json.loads((tmp_path / "lead_assignment.json").read_text(encoding="utf-8"))
-    assert state[0]["lastAdminId"] == 1
+    assert state[0]["lastAdminId"] == 3
 
 
 def test_sheets_duplicate_does_not_consume_queue(client, iso):
@@ -97,7 +98,7 @@ def test_sheets_duplicate_does_not_consume_queue(client, iso):
     dup = client.post("/api/integrations/sheets/lead", headers=SHEETS, json={"name": "A", "phone": "998901110000"})
     assert dup.json()["duplicate"] is True
     nxt = client.post("/api/integrations/sheets/lead", headers=SHEETS, json={"name": "B", "phone": "+998902220000"})
-    assert nxt.json()["lead"]["manager"] == "Menejer 1"        # A → Bosh Menejer, B → Menejer 1
+    assert nxt.json()["lead"]["manager"] == "Menejer 2"        # A → Menejer 1, B → Menejer 2
     assert len(storage.read("leads")) == 2
 
 
@@ -107,17 +108,20 @@ def test_sheets_manager_column_respected_when_it_matches_active_manager(client, 
     assert ok["manager"] == "Menejer 2"
     unknown = client.post("/api/integrations/sheets/lead", headers=SHEETS,
                           json={"name": "D", "phone": "+998904440000", "manager": "Ketgan Menejer"}).json()["lead"]
-    assert unknown["manager"] == "Bosh Menejer"                # faolsiz → navbat bo'yicha
+    assert unknown["manager"] == "Menejer 1"                   # faolsiz → navbat bo'yicha
+    boss = client.post("/api/integrations/sheets/lead", headers=SHEETS,
+                       json={"name": "E", "phone": "+998905550000", "manager": "Bosh Menejer"}).json()["lead"]
+    assert boss["manager"] == "Menejer 2"                      # Bosh menejer ustunda bo'lsa ham → hodimga
 
 
 def test_dry_run_changes_nothing(client, iso):
     _seed_leads(9)
     before = storage.read("leads")
     data = client.post("/api/leads/rebalance", headers=iso["boss"], json={"dryRun": True}).json()
-    assert data["dryRun"] is True and [m["leads"] for m in data["managers"]] == [3, 3, 3]
-    assert data["changed"] == 6                                # 3 tasi allaqachon Bosh Menejerda
+    assert data["dryRun"] is True and [m["leads"] for m in data["managers"]] == [5, 4]
+    assert data["changed"] == 9                                # hammasi Bosh Menejerdan hodimlarga o'tadi
     assert storage.read("leads") == before
-    assert assignment.peek_next_admin()["name"] == "Bosh Menejer"
+    assert assignment.peek_next_admin()["name"] == "Menejer 1"
 
 
 def test_rebalance_backup_saved(client, iso):
@@ -132,7 +136,9 @@ def test_managers_see_their_share_after_rebalance(client, iso):
     _seed_leads(9)
     client.post("/api/leads/rebalance", headers=iso["boss"])
     mine = client.get("/api/leads", headers=iso["m1"]).json()
-    assert len(mine) == 3 and {l["manager"] for l in mine} == {"Menejer 1"}
+    assert len(mine) == 5 and {l["manager"] for l in mine} == {"Menejer 1"}
+    # Bosh menejer hamma hodimlarning leadlarini ko'radi
+    assert len(client.get("/api/leads", headers=iso["boss"]).json()) == 9
 
 
 def test_rebalance_requires_boss(client, iso):
@@ -153,3 +159,49 @@ def test_no_active_managers_returns_409(client, iso, monkeypatch):
     monkeypatch.setattr(config, "ROUND_ROBIN_EXCLUDE_LOGINS", {"boss", "m1", "m2"})
     _seed_leads(2)
     assert client.post("/api/leads/rebalance", headers=iso["boss"]).status_code == 409
+
+
+# ——— Bosh menejerga lead tushmaydi, u faqat kuzatadi ———
+
+
+def test_boss_created_lead_goes_to_employee_not_boss(client, iso):
+    got = [client.post("/api/leads", headers=iso["boss"],
+                       json={"name": f"Q{i}", "phone": f"+99893{i:07d}"}).json()["manager"] for i in range(4)]
+    assert got == ["Menejer 1", "Menejer 2", "Menejer 1", "Menejer 2"]
+
+
+def test_boss_cannot_assign_lead_to_himself(client, iso):
+    resp = client.post("/api/leads", headers=iso["boss"],
+                       json={"name": "X", "phone": "+998931112233", "manager": "Bosh Menejer"})
+    assert resp.status_code == 400
+    lead = client.post("/api/leads", headers=iso["boss"],
+                       json={"name": "Y", "phone": "+998931112244", "manager": "Menejer 2"}).json()
+    assert lead["manager"] == "Menejer 2"                      # hodimni qo'lda tanlash ishlaydi
+    upd = client.put(f"/api/leads/{lead['id']}", headers=iso["boss"], json={**lead, "manager": "Bosh Menejer"})
+    assert upd.status_code == 400
+    assert storage.get_one("leads", lead["id"])["manager"] == "Menejer 2"
+    ok = client.put(f"/api/leads/{lead['id']}", headers=iso["boss"], json={**lead, "manager": "Menejer 1"})
+    assert ok.status_code == 200 and ok.json()["manager"] == "Menejer 1"
+
+
+def test_old_boss_lead_can_still_be_edited(client, iso):
+    # Avval Bosh menejerga tushgan lead — boshqa maydonlarini tahrirlash bloklanmaydi
+    _seed_leads(1)
+    lead = storage.get_one("leads", 1)
+    resp = client.put("/api/leads/1", headers=iso["boss"], json={**lead, "amount": 999})
+    assert resp.status_code == 200 and resp.json()["amount"] == 999
+
+
+def test_employee_lead_stays_with_employee(client, iso):
+    lead = client.post("/api/leads", headers=iso["m1"], json={"name": "M", "phone": "+998934445566"}).json()
+    assert lead["manager"] == "Menejer 1"
+    assert any(l["id"] == lead["id"] for l in client.get("/api/leads", headers=iso["boss"]).json())
+
+
+def test_no_active_employee_leaves_lead_unassigned(client, iso):
+    storage.write("users", [u for u in storage.read("users") if u["role"] != "admin"])
+    lead = client.post("/api/leads", headers=iso["boss"], json={"name": "Z", "phone": "+998936667788"}).json()
+    assert lead["manager"] == ""
+    sheet = client.post("/api/integrations/sheets/lead", headers=SHEETS,
+                        json={"name": "S", "phone": "+998937778899"}).json()["lead"]
+    assert sheet["manager"] == ""

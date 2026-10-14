@@ -145,7 +145,7 @@ _LEAD_FIELDS = ("id", "name", "phone", "tour", "people", "amount", "stage", "sou
 _CLIENT_FIELDS = ("id", "name", "phone", "country", "status", "trips", "total", "lastTour", "lastDate", "manager")
 _SALE_FIELDS = ("id", "client", "tour", "amount", "manager", "date", "status")
 _TASK_FIELDS = ("id", "title", "to", "from", "due", "time", "priority", "done")
-_TOUR_FIELDS = ("id", "name", "country", "days", "price", "seats", "status")
+_TOUR_FIELDS = ("id", "name", "country", "departureDate", "days", "price", "currency", "seats", "status")
 
 
 def _pick(row: dict[str, Any], fields: tuple[str, ...]) -> dict[str, Any]:

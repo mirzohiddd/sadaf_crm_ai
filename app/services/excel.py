@@ -35,8 +35,9 @@ REPORTS: dict[str, dict[str, Any]] = {
     "tours": {
         "title": "Turlar",
         "columns": [
-            ("id", "ID"), ("name", "Tur nomi"), ("country", "Yo'nalish"), ("days", "Kun"),
-            ("price", "Narx (USD)"), ("seats", "Bo'sh joy"), ("status", "Holat"),
+            ("id", "ID"), ("name", "Tur nomi"), ("country", "Yo'nalish"),
+            ("departureDate", "Ketish sanasi"), ("days", "Kun"),
+            ("price", "Narx"), ("currency", "Valyuta"), ("seats", "Bo'sh joy"), ("status", "Holat"),
         ],
     },
     "sales": {
@@ -85,7 +86,8 @@ def rows_for(kind: str, user: dict[str, Any]) -> list[dict[str, Any]]:
     if kind == "clients":
         return crm.clients_of(user)
     if kind == "tours":
-        return crm.tours_of(user)
+        # Eski turlarda valyuta yozilmagan — ular USD da saqlangan edi.
+        return [{**t, "currency": t.get("currency") or "USD"} for t in crm.tours_of(user)]
     if kind == "sales":
         return crm.sales_of(user)
     if kind == "employees":

@@ -1,1 +1,54 @@
-[]
+[
+  {
+    "leadId": 1,
+    "leadName": "mirzohid",
+    "leadPhone": "",
+    "leadPlatform": "Telegram",
+    "leadStage": "Yangi",
+    "leadManager": "Menejer",
+    "managerId": 2,
+    "managerName": "Menejer",
+    "channel": "browser_mic",
+    "direction": "outbound",
+    "externalId": null,
+    "status": "analyzed",
+    "consent": {
+      "confirmed": true,
+      "at": "2026-10-05T04:16:15+00:00",
+      "by": 2
+    },
+    "duration": 10.07,
+    "recording": {
+      "file": "5ef6803938874a3d9b35c93598dd036f.wav",
+      "mime": "audio/wav",
+      "size": 322264,
+      "sha256": "6d34bfd95d86573639472a6c2cc42d778f74efb2f16a5998a66e1977b18a7503",
+      "uploadedAt": "2026-10-05T04:16:26+00:00",
+      "uploadedBy": 2
+    },
+    "transcriptStatus": "done",
+    "transcriptError": "",
+    "analysisStatus": "done",
+    "analysisError": "",
+    "analysisSummary": {
+      "rating": "poor",
+      "ratingLabel": "Yomon",
+      "score": 20,
+      "problems": 4,
+      "passed": 1,
+      "failed": 5,
+      "followUpAgreed": false,
+      "salesOpportunity": "low"
+    },
+    "analysisOutdated": false,
+    "date": "05.10.2026",
+    "time": "09:16",
+    "id": 1,
+    "createdAt": "2026-10-05T04:16:15+00:00",
+    "updatedAt": "2026-10-05T04:16:32+00:00",
+    "processing": {
+      "transcript": "2026-10-05T04:16:26+00:00",
+      "analysis": "2026-10-05T04:16:29+00:00"
+    }
+  }
+]

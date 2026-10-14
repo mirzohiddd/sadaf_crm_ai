@@ -1,1 +1,30 @@
-[]
+[
+  {
+    "leadId": 1,
+    "managerId": 2,
+    "provider": "groq",
+    "model": "whisper-large-v3-turbo",
+    "language": "Uzbek",
+    "duration": 10.069374976,
+    "text": "SADAF, mirzohid",
+    "segments": [
+      {
+        "start": 0.0,
+        "end": 10.88,
+        "text": "SADAF, mirzohid",
+        "speaker": 1,
+        "role": "MIJOZ"
+      }
+    ],
+    "roleMap": {
+      "1": "MIJOZ"
+    },
+    "roleMethod": "ai",
+    "warning": "",
+    "id": 1,
+    "callId": 1,
+    "version": 1,
+    "createdAt": "2026-10-05T04:16:28+00:00",
+    "updatedAt": "2026-10-05T04:16:28+00:00"
+  }
+]
