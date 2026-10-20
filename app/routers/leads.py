@@ -427,5 +427,11 @@ def delete_lead(lead_id: int, user: dict[str, Any] = Depends(require("leads", "d
     current = ensure_access(storage.get_one("leads", lead_id), user, resource="leads")
     storage.delete("leads", lead_id)
     storage.write("sales", [s for s in storage.read("sales") if int(s.get("leadId", 0)) != int(lead_id)])
+    # Leadning eslatmalari ham o'chiriladi — aks holda "Eslatmalar" sahifasida
+    # va fon vazifasida egasiz (yetim) eslatmalar qolib ketardi.
+    def _drop_lead_reminders(rows: list[dict[str, Any]]) -> None:
+        rows[:] = [r for r in rows if int(r.get("leadId", 0) or 0) != int(lead_id)]
+
+    storage.mutate("reminders", _drop_lead_reminders)
     notify.log(user.get("name", ""), "delete", "lead", current.get("name", ""), actor_id=int(user["id"]))
     return {"ok": True, "id": lead_id}

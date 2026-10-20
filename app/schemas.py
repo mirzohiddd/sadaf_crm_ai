@@ -261,6 +261,16 @@ class ReminderIn(Loose):
     note: str = ""
 
 
+class ReminderCreateIn(ReminderIn):
+    """Umumiy "Eslatmalar" sahifasidan qo'shiladigan eslatma — lead tanlanadi.
+
+    Lead ichidan qo'shishda (``POST /api/leads/{id}/reminders``) lead URL
+    orqali keladi; bu yerda esa body ichida ``leadId`` sifatida keladi.
+    """
+
+    leadId: int
+
+
 # ——— Sozlamalar / davomat / AI ———
 
 

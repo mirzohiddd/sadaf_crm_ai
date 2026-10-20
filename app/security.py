@@ -72,27 +72,29 @@ ROLE_LABELS = {
     "operator": "Operator",
 }
 
-# Har bir rol uchun ruxsat etilgan sahifalar (frontend navbar shu ro'yxatga qaraydi)
+# Har bir rol uchun ruxsat etilgan sahifalar (frontend navbar shu ro'yxatga qaraydi).
+# "eslatmalar" — leadlarga qo'yilgan eslatmalarning umumiy sahifasi; har bir
+# rol faqat o'ziga ochiq leadlarning eslatmalarini ko'radi (leads scoping).
 ROLE_PAGES: dict[str, list[str]] = {
     "super_admin": [
         "dashboard", "hodimlar", "turlar", "ledlar", "mijozlar",
         "savdolar", "analitika", "hisobot", "vazifalar",
-        "bildirishnomalar", "ai", "sozlamalar",
+        "bildirishnomalar", "ai", "sozlamalar", "eslatmalar",
     ],
     # Admin roli faqat quyidagi sahifalarni ko'radi: Dashboard, Ledlar,
     # Mijozlar, Savdolar, Hisobot, Sozlamalar (Hodimlar/Turlar/Analitika yopiq).
     "admin": [
         "dashboard", "ledlar", "mijozlar", "savdolar", "hisobot",
-        "vazifalar", "bildirishnomalar", "ai", "sozlamalar",
+        "vazifalar", "bildirishnomalar", "ai", "sozlamalar", "eslatmalar",
     ],
     "manager": [
         "dashboard", "hodimlar", "turlar", "ledlar", "mijozlar",
         "savdolar", "analitika", "hisobot", "vazifalar",
-        "bildirishnomalar", "ai", "sozlamalar",
+        "bildirishnomalar", "ai", "sozlamalar", "eslatmalar",
     ],
     "operator": [
         "dashboard", "ledlar", "mijozlar", "vazifalar",
-        "bildirishnomalar", "ai", "sozlamalar",
+        "bildirishnomalar", "ai", "sozlamalar", "eslatmalar",
     ],
 }
 
